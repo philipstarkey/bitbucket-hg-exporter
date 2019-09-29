@@ -1,3 +1,17 @@
+The bitbucket-hg-exporter project is licensed under a custom license.
+
+For employees of Atlassian using this project on behalf of Atlassian, Atlassian,
+subsidiaries of Atlassian, or anyone using it to benefit Atlassian, you are
+denied a license to use the software unless you pay the original project author 
+(Philip Starkey), AUD$1000000 (1 million AUD).
+
+For everyone else (individuals, businesses, enterprises, etc.) who just want
+to use this to escape Atlassian and BitBucket before their data is deleted,
+this project is licensed under the GPL v3 (see below) with the added condition 
+that any derivative works retain the above restriction regarding use by 
+Atlassian or associated individuals.
+
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
