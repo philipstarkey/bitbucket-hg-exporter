@@ -11,6 +11,11 @@ As Atlassian is refusing to write something like this themselves, I've licensed 
 
 For everyone else who is not working for the benefit of Atlassian (including individuals, businesses, and enterprises), this tool is free to use and modify under the GPL v3 with the additional restriction that you must retain the clause that prevents Atlassian from benefitting from it or derivative works. See the [LICENSE](https://github.com/philipstarkey/bitbucket-hg-exporter/blob/master/LICENSE) file for further details.
 
+## How can I thank you
+If you are a business or enterprise, and my tool saved you money, please consider donating 10% of the saved money to me to show your thanks. You can donate to me via PayPal [here](https://www.paypal.me/philiptstarkey). I'd also encourage you to donate the remaining 90%  to other open source projects you use.
+
+If you are an individual, non-profit, or using this tool for an open source project, then I'd appreciate it if you could "star" my project and share it with other people who would benefit from the tool. You're also welcome to send me a few dollars via the PayPal link above.
+
 ## Installation
 TODO
 
