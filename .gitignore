@@ -102,3 +102,6 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# test data
+bitbucket_hg_exporter/gh-pages-template/bitbucket_data/*

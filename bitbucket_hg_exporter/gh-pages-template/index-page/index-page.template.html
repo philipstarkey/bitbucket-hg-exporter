@@ -4,11 +4,10 @@
         <!--Sidebar content-->
         <sidebar-links></sidebar-links>
       </div>
-      <div class="col-md-10">
+      <div class="col-md-10 table-responsive">
         <!--Body content-->
-        <h2>{{$ctrl.issue.title}}</h2>
-        Issue #{{$ctrl.issue.id}}
-        <div ng-bind-html="$ctrl.mainHtml"></div>
+  
+        <h1>Welcome to the archive of BitBucket data from the <span ng-bind="$root.project_name"></span> project</h1>
       </div>
     </div>
   </div>

@@ -2,18 +2,12 @@
     <div class="row">
       <div class="col-md-2">
         <!--Sidebar content-->
-  
-        <!-- TODO: put links to issues, PRs, etc here -->
+        <sidebar-links></sidebar-links>
       </div>
       <div class="col-md-10 table-responsive">
         <!--Body content-->
   
-        <!-- <ul class="phones">
-          <li ng-repeat="issue in $ctrl.issues.values | filter:$ctrl.query | orderBy:$ctrl.orderProp" class="thumbnail">
-            <a href="#!/issue/{{issue.id}}">{{issue.title}}</a>
-            <p>{{issue.reporter.display_name}}</p>
-          </li>
-        </ul> -->
+        <h2>Issues</h2>
         <table class="issues table table-striped table-hover">
             <thead>
                 <tr>
