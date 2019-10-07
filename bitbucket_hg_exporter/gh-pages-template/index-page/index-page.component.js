@@ -5,10 +5,10 @@ angular.
   module('indexPage').
   component('indexPage', {
     templateUrl: 'index-page/index-page.template.html',
-    controller: ['$http', '$routeParams', '$scope', '$rootScope', function IndexPageController($http, $routeParams, $scope, $routeScope) {
+    controller: ['$http', '$routeParams', '$scope', '$rootScope', function IndexPageController($http, $routeParams, $scope, $rootScope) {
         var self = this;
         self.scope = $scope;
-        console.log($routeScope.project_data)
+        console.log($rootScope.project_data)
         
     }]
   });

@@ -9,6 +9,23 @@
         <h2>{{$ctrl.issue.title}}</h2>
         Issue #{{$ctrl.issue.id}}
         <div ng-bind-html="$ctrl.mainHtml"></div>
+
+        <hr />
+
+        <h3>Comments ({{$ctrl.comments.size}})</h3>
+
+        <div ng-repeat="comment in $ctrl.comments.values" class="panel panel-default">
+          <div class="panel-heading">{{comment.user.display_name}}</div>
+          <div class="panel-body">
+            <span ng-bind-html="comment.content.html"></span>
+            <span uib-tooltip="{{comment.created_on | date: 'yyyy-MM-dd HH:mm'}}" tooltip-placement="right">{{comment.created_on | date: 'yyyy-MM-dd'}}</span>
+          </div>
+        </div>
+
+        <span ng-show="$ctrl.commentPage > 1"><a href="#!/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage-1 | number:0}}">&laquo; Prev</a></span>
+        | <strong>Page {{$ctrl.commentPage}}</strong> |
+        <span ng-show="$ctrl.comments.next"><a href="#!/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage+1 | number:0}}">Next &raquo;</a></span>
+
       </div>
     </div>
   </div>

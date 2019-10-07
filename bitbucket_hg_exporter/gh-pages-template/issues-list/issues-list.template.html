@@ -59,9 +59,9 @@
             </tbody>
         </table>
       
-        <span ng-show="$ctrl.currentPage > 1"><a href="#!/issues/page={{$ctrl.currentPage-1 | number:0}}">&laquo; Prev</a></span>
+        <span ng-show="$ctrl.currentPage > 1"><a href="#!/issues/page/{{$ctrl.currentPage-1 | number:0}}">&laquo; Prev</a></span>
         | <strong>Page {{$ctrl.currentPage}}</strong> |
-        <span ng-show="$ctrl.issues.next"><a href="#!/issues/page={{$ctrl.currentPage+1 | number:0}}">Next &raquo;</a></span>
+        <span ng-show="$ctrl.issues.next"><a href="#!/issues/page/{{$ctrl.currentPage+1 | number:0}}">Next &raquo;</a></span>
       </div>
     </div>
   </div>

@@ -5,7 +5,7 @@ angular.
   module('issuesList').
   component('issuesList', {
     templateUrl: 'issues-list/issues-list.template.html',
-    controller: ['$http', '$routeParams', function IssueListController($http, $routeParams) {
+    controller: ['$http', '$routeParams', '$rootScope', function IssueListController($http, $routeParams, $rootScope) {
         var self = this;
         self.orderProp = 'id';
         self.reverseSort = false;
@@ -24,7 +24,7 @@ angular.
         //pagination info
         self.currentPage = $routeParams.pageId;
       
-        $http.get('bitbucket_data/repositories/philipstarkey/qtutils/issuespagelen=100&page='+self.currentPage+'.json').then(function(response) {
+        $http.get($rootScope.relative_project_url+'issuespagelen=100&page='+self.currentPage+'.json').then(function(response) {
             self.issues = response.data;
         });
         
