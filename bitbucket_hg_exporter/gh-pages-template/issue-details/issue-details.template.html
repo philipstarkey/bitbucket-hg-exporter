@@ -7,18 +7,55 @@
       <div class="col-md-10">
         <!--Body content-->
         <h2>{{$ctrl.issue.title}}</h2>
-        Issue #{{$ctrl.issue.id}}
-        <div ng-bind-html="$ctrl.mainHtml"></div>
+        <div class="panel panel-primary">
+            <!-- Default panel contents -->
+            <div class="panel-heading">Issue #{{$ctrl.issue.id}} <span class="label" ng-class="$ctrl.issue.state=='new' || $ctrl.issue.state=='open' ? 'label-success' : ''">{{$ctrl.issue.state | uppercase}}</span></div>
+          
+            <!-- Table -->
+            <table class="table">
+              <tr>
+                <td><div ng-bind-html="$ctrl.mainHtml"></div></td>
+                <td>
+                    <table class="table table-bordered">
+                      <tr>
+                          <td>Reporter: {{$ctrl.issue.reporter.display_name}}</td>
+                        </tr>
+                        <tr>
+                          <td>Created on: <span uib-tooltip="{{$ctrl.issue.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.issue.created_on | date: 'yyyy-MM-dd'}}</span></td>
+                        </tr>
+                        <tr>
+                          <td>Assignee: {{$ctrl.issue.assignee.display_name}}</td>
+                        </tr>
+                        <tr>
+                          <td>Type: {{$ctrl.issue.kind}}</td>
+                        </tr>
+                        <tr>
+                          <td>Priority: {{$ctrl.issue.priority}}</td>
+                        </tr>
+                        <tr>
+                          <td>Status: {{$ctrl.issue.state}}</td>
+                        </tr>
+                        <tr>
+                          <td>Votes: <span class="badge">{{$ctrl.issue.votes}}</span></td>
+                        </tr>
+                        <tr>
+                          <td>Watchers: <span class="badge">{{$ctrl.issue.watches}}</span></td>
+                        </tr>
+                    </table>
+                </td>
+              </tr>
+            </table>
+          </div>
 
         <hr />
 
         <h3>Comments ({{$ctrl.comments.size}})</h3>
 
         <div ng-repeat="comment in $ctrl.comments.values" class="panel panel-default">
-          <div class="panel-heading">{{comment.user.display_name}}</div>
+          <div class="panel-heading">{{comment.user.display_name}}<span ng-if="$ctrl.issue.reporter.uuid==comment.user.uuid"> <span class="label label-primary">Reporter</span></span></div>
           <div class="panel-body">
             <span ng-bind-html="comment.content.html"></span>
-            <span uib-tooltip="{{comment.created_on | date: 'yyyy-MM-dd HH:mm'}}" tooltip-placement="right">{{comment.created_on | date: 'yyyy-MM-dd'}}</span>
+            <span uib-tooltip="{{comment.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{comment.created_on | date: 'yyyy-MM-dd'}}</span>
           </div>
         </div>
 
