@@ -105,3 +105,4 @@ venv.bak/
 
 # test data
 bitbucket_hg_exporter/gh-pages-template/bitbucket_data/*
+bitbucket_hg_exporter/gh-pages-template/bitbucket_data_relative/*

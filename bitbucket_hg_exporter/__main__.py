@@ -15,6 +15,7 @@ import requests
 import threading
 import time
 import os
+import shutil
 import sys
 from urllib import parse
 
@@ -380,7 +381,9 @@ class MigrationProject(object):
         return password
         
 
-prog = re.compile(r'\"{}(.*?)\"'.format(bitbucket_api_url))
+prog = re.compile(r'\"{}(.*?)\"'.format(bitbucket_api_url), re.MULTILINE)
+
+
 
 class BitBucketExport(object):
     #
@@ -394,18 +397,30 @@ class BitBucketExport(object):
         self.__credentials = credentials
         self.__options = options
 
-        self.__save_path = os.path.join(options['project_path'], 'bitbucket_data')
+        self.__save_path = os.path.join(options['project_path'], 'bitbucket_data_raw')
+        self.__save_path_relative = os.path.join(options['project_path'], 'bitbucket_data_relative')
 
         self.__tree = []
         self.__current_tree_location = ()
 
         self.tree_new_level()
 
-        # TODO: Save attachments
+        # TODO: Save attachments - DONE
+        #       Guess file extension from mime type (see https://stackoverflow.com/questions/29674905/convert-content-type-header-into-file-extension)
+        #       Save downloads
+        #       Ignore endpoint "issue/<num>/attachments/<file>" in the JSON function (they are processed there which fails as well as the download file function which succeeds)
         #       checkout wiki
         #       checkout repo
-        #       save issue changelist which isn't linked to from other JSON files for some reason so is missed by the code below
+        #       save issue changelist which isn't linked to from other JSON files for some reason so is missed by the code below - DONE
 
+        self.file_download_regexes = [
+            re.compile(r'\"(https://bitbucket\.org/repo/(?:[a-zA-Z0-9]+)/images/(?:.+?))\\\"', re.MULTILINE), # images in HTML
+            re.compile(r'\"(https://pf-emoji-service--cdn\.(?:[a-zA-Z0-9\-]+)\.prod\.public\.atl-paas\.net/(?:.+?))\\\"', re.MULTILINE), # emojis
+            re.compile(r'\"(https://secure.gravatar.com/avatar/(?:.+?))\"', re.MULTILINE), # avatars
+            re.compile(r'\"(https://bytebucket\.org/(?:.+?))\"', re.MULTILINE), # other things (like language avatars)
+            # re.compile(r'\"(https://bytebucket\.org/(?:.+?))\"', re.MULTILINE), # TODO: downloads
+            re.compile(r'\"(https://api\.bitbucket\.org/2\.0/repositories/{owner}/{repo}/issues/(?:\d+)/attachments/(?:.+?))\"'.format(owner=self.__owner, repo=self.__repository), re.MULTILINE), # attachments
+        ]
 
         # TODO: probably want to save some of these...the question is how far do we go down the tree.
         #       for example, users link to other repos which then result in you saving data for every 
@@ -617,6 +632,36 @@ class BitBucketExport(object):
 
         return endpoint, params
 
+    def download_file(self, base_url):
+        # convert url to save path
+        #
+        save_path = os.path.join(self.__save_path, base_url.replace(bitbucket_api_url, '').replace('https://', '').replace('http://', '').replace('?', ''))
+
+        # save this URL in the tree
+        tree = self.__tree
+        for i in self.current_tree_location[:-1]:
+            tree = tree[i]['children']
+        tree.append({'url': base_url, 'rewritten_url': base_url, 'endpoint_path':save_path, 'already_processed': False, 'children': []})
+
+
+        # don't download if it is already downloaded
+        if os.path.exists(save_path):
+            # mark as already processed
+            tree[-1]['already_processed'] = True
+            return
+
+        # create the dir structure
+        head, _ = os.path.split(save_path)
+        try:
+            os.makedirs(head)
+        except FileExistsError:
+            pass
+
+        r = requests.get(base_url, stream=True)
+        with open(save_path, 'wb') as fd:
+            for chunk in r.iter_content(1024**2): # 1Mb chunk size
+                fd.write(chunk)
+
     def get_and_save_json(self, base_url, ignore_rules, rewrite_rules):
         # TODO: handle resume from partial download 
 
@@ -686,9 +731,28 @@ class BitBucketExport(object):
                 self.get_and_save_json(json_data['next'], ignore_rules, rewrite_rules)
                 self.tree_increment_level()
 
+            # download any files references
+            for compiled_regex in self.file_download_regexes:
+                results = compiled_regex.findall(response.text)
+                for result in results:
+                    try:
+                        print('downloading file: {}'.format(result))
+                        self.download_file(result)
+                        self.tree_increment_level()
+                    except BaseException:
+                        print('Failed to download file {}'.format(result))
+                        raise
+
             # find all the other referenced API endpoints in this data and collect them too
-            results = prog.findall(response.text, re.MULTILINE)
+            results = prog.findall(response.text)
             for result in results:
+                # hack because nothing references issue/<num>/changes for some reason
+                issue_pattern = r'repositories/{}/{}/issues/(\d+)$'.format(self.__owner, self.__repository)
+                matches = re.match(issue_pattern, result)
+                if matches:
+                    self.get_and_save_json(bb_endpoint_to_full_url(result+'/changes'), ignore_rules, rewrite_rules)
+                    self.tree_increment_level()
+
                 skip = False
                 for rule in ignore_rules:
                     if rule['type'] == 'in':
@@ -732,25 +796,44 @@ class BitBucketExport(object):
             tree = self.__tree
 
         for item in tree:
-            if item['already_processed']:
-                continue
+            # get new path
+            new_path = item['endpoint_path'].replace(self.__save_path, self.__save_path_relative)
+            head, _ = os.path.split(new_path)
+            try:
+                os.makedirs(head)
+            except FileExistsError:
+                pass
+
+            skip_file = False
+            # ignore if new path already converted
+            if os.path.exists(new_path):
+                skip_file = True
+            # ignore if file doesn't exist
             if not os.path.exists(item['endpoint_path']):
-                continue
+                skip_file = True
 
-            # open file
-            # print('processing', item['endpoint_path'])
-            with open(item['endpoint_path'], 'r') as f:
-                data = f.read()
+            if not skip_file:
+                # if it is a JSON file
+                if new_path.endswith('.json'):
+                    # open file
+                    # print('processing', item['endpoint_path'])
+                    with open(item['endpoint_path'], 'r') as f:
+                        data = f.read()
 
-            # iterate over children and replace URLs
-            for child in item['children']:
-                # print('replacing', child['url'], 'with', child['endpoint_path'].replace(r'\\', '/').replace(r'\','/'))
-                new_url = child['endpoint_path'].replace(self.__save_path, 'bitbucket_data').replace('\\\\', '/').replace('\\','/')
-                data = data.replace('"{}"'.format(child['url']), '"{}"'.format(new_url))
+                    # iterate over children and replace URLs
+                    for child in item['children']:
+                        # print('replacing', child['url'], 'with', child['endpoint_path'].replace(r'\\', '/').replace(r'\','/'))
+                        new_url = child['endpoint_path'].replace(self.__save_path, 'bitbucket_data_relative').replace('\\\\', '/').replace('\\','/')
+                        data = data.replace('"{}"'.format(child['url']), '"{}"'.format(new_url)) # JSON value
+                        data = data.replace(r'\"{}\"'.format(child['url']), r'\"{}\"'.format(new_url)) # escaped HTML image src in JSON
+                        data = data.replace('![]({})'.format(child['url']), '![]({})'.format(new_url)) # markdown image format
 
-            # save file
-            with open(item['endpoint_path'], 'w') as f:
-                f.write(data)
+                    # save file
+                    with open(new_path, 'w') as f:
+                        f.write(data)
+                # if it is a binary file
+                else:
+                    shutil.copyfile(item['endpoint_path'], new_path)
 
             # recurse over children
             self.make_urls_relative(item['children'])
