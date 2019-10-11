@@ -634,8 +634,13 @@ class BitBucketExport(object):
 
     def download_file(self, base_url):
         # convert url to save path
-        #
-        save_path = os.path.join(self.__save_path, base_url.replace(bitbucket_api_url, '').replace('https://', '').replace('http://', '').replace('?', ''))
+        # remove '/' before the decode as the ones that exist prior to the decode as real characters
+        #  (aka the '/' in the address, not query params) shouldn't be removed
+        corrected_url_path = parse.unquote(base_url.replace(r'%2F', r'')).replace(bitbucket_api_url, '').replace('https://', '').replace('http://', '')
+        special_chars = ['?', ':', '\\', '*','<', '>', '"', '|']
+        for c in special_chars:
+            corrected_url_path = corrected_url_path.replace(c,'')
+        save_path = os.path.join(self.__save_path, corrected_url_path)
 
         # save this URL in the tree
         tree = self.__tree
