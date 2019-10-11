@@ -17,6 +17,9 @@ angular.
             {title:"Status", index:"status"},
             {title:"Votes", index:"votes"},
             {title:"Assignee", index:"assignee.display_name"},
+            {title:"Component", index:"component.name"},
+            {title:"Milestone", index:"milestone.name"},
+            {title:"Version", index:"version.name"},
             {title:"Created", index:"created_on"},
             {title:"Updated", index:"updated_on"}
         ];

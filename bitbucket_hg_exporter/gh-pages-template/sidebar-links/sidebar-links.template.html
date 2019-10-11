@@ -1,3 +1,4 @@
+<img ng-src="{{$root.project_data.links.avatar.href}}" height="40" width="40" class="img-rounded img-responsive" style="float: left; margin-right: 7px; margin-top: 20px" />
 <h1>{{$root.project_name}}</h1>
 <h5>BitBucket archive</h5>
 <p ng-repeat="link in $root.links "><a href="{{link['url']}}">{{link['text']}}</a></p>
