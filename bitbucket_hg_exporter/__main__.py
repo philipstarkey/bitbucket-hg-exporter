@@ -20,6 +20,7 @@ import sys
 from urllib import parse
 
 from OpenSSL.SSL import SysCallError
+from distutils.dir_util import copy_tree
 
 bitbucket_api_url = 'https://api.bitbucket.org/2.0/'
 
@@ -88,6 +89,10 @@ class MigrationProject(object):
             'generate_static_issue_pages': True,
             'generate_static_pull_request_pages': True,
             'generate_static_commit_comments_pages': True,
+
+            'bitbucket_api_download_complete': False,
+            'bitbucket_api_URL_replace_complete': False,
+            'bitbucket_hg_download_complete': False,
         }
 
         # prompt for new/load
@@ -111,7 +116,7 @@ class MigrationProject(object):
             if os.path.exists(path):
                 try:
                     with open(path, 'r') as f:
-                        self.__settings = json.load(f)
+                        self.__settings.update(json.load(f))
                     project_found = True
                 except BaseException:
                     print('Could not load project.json file in {}. It may be corrupted. Please check the formatting and try again'.format(path))
@@ -163,28 +168,54 @@ class MigrationProject(object):
                 raise RuntimeError('Unknown option selected')
 
         # save the project
-        with open(os.path.join(self.__settings['project_path'], 'project.json'), 'w') as f:
-            json.dump(self.__settings, f, indent=4)
+        self.__save_project_settings()
         
         # prompt to start project
         print('Project configuration saved!')
+        #TODO: make resume have nicer text prompts
         choices = {
             "Start export":0, 
             "Exit":1,
         }
         response = q.select("What would you like to do?", choices=choices.keys()).ask()
         if choices[response] == 0:
-            pass # TODO!
-            for repository in self.__settings['bb_repositories_to_export']:
-                owner = self.__settings['bitbucket_repo_owner']
-                repo = repository['slug']
-                creds = (self.__settings['master_bitbucket_username'], self.__get_password('bitbucket', self.__settings['master_bitbucket_username']))
-                exporter = BitBucketExport(owner, repo, creds, copy.deepcopy(self.__settings))
+            owner = self.__settings['bitbucket_repo_owner']
+            creds = (self.__settings['master_bitbucket_username'], self.__get_password('bitbucket', self.__settings['master_bitbucket_username']))
+            exporter = BitBucketExport(owner, creds, copy.deepcopy(self.__settings))
+            if not self.__settings['bitbucket_api_download_complete'] or not self.__settings['bitbucket_api_URL_replace_complete']:
+                exporter.backup_api()
+                self.__settings['bitbucket_api_download_complete'] = True
+                self.__save_project_settings()
+            # rewrite URLS to reference the downloaded ones
+            if not self.__settings['bitbucket_api_URL_replace_complete']:
+                exporter.make_urls_relative()
+                self.__settings['bitbucket_api_URL_replace_complete'] = True
+                self.__save_project_settings()
+            # copy the gh-pages template to the project directory
+            do_copy = True
+            if os.path.exists(os.path.join(self.__settings['project_path'], 'gh-pages', 'index.html')):
+                do_copy = q.confirm('Overwrite HTML app for GitHub pages site with latest version?').ask()
+                if do_copy:
+                    # delete old version
+                    try:
+                        os.remove(os.path.join(self.__settings['project_path'], 'gh-pages', 'index.html'))
+                    except BaseException:
+                        pass
+                    try:
+                        shutil.rmtree(os.path.join(self.__settings['project_path'], 'gh-pages', 'ng'))
+                    except BaseException:
+                        pass
+            if do_copy:
+                copy_tree(os.path.join(os.path.dirname(__file__), 'gh-pages-template'), os.path.join(self.__settings['project_path'], 'gh-pages'))
 
         elif choices[response] == 1:
             sys.exit(0)
         else:
             raise RuntimeError('Unknown option selected')
+
+    def __save_project_settings(self):
+        with open(os.path.join(self.__settings['project_path'], 'project.json'), 'w') as f:
+            json.dump(self.__settings, f, indent=4)
 
     def __get_project_name(self):
         self.__settings['project_name'] = q.text("Enter name for this migration project:").ask()
@@ -391,14 +422,13 @@ class BitBucketExport(object):
     # We can't parallelise the download of JSON data if we want to be able to 
     # resume it without processing every saved JSON file
     #
-    def __init__(self, owner, repository, credentials, options):
+    def __init__(self, owner, credentials, options):
         self.__owner = owner
-        self.__repository = repository
         self.__credentials = credentials
         self.__options = options
 
         self.__save_path = os.path.join(options['project_path'], 'bitbucket_data_raw')
-        self.__save_path_relative = os.path.join(options['project_path'], 'bitbucket_data_relative')
+        self.__save_path_relative = os.path.join(options['project_path'], 'gh-pages', 'data')
 
         self.__tree = []
         self.__current_tree_location = ()
@@ -413,6 +443,14 @@ class BitBucketExport(object):
         #       checkout repo
         #       save issue changelist which isn't linked to from other JSON files for some reason so is missed by the code below - DONE
 
+
+    def backup_api(self):
+        for repository in self.__options['bb_repositories_to_export']:
+            # this is a bit of a hack but whatever!
+            self.__repository = repository['slug']
+            self.__backup_api()
+
+    def __backup_api(self):    
         self.file_download_regexes = [
             re.compile(r'\"(https://bitbucket\.org/repo/(?:[a-zA-Z0-9]+)/images/(?:.+?))\\\"', re.MULTILINE), # images in HTML
             re.compile(r'\"(https://pf-emoji-service--cdn\.(?:[a-zA-Z0-9\-]+)\.prod\.public\.atl-paas\.net/(?:.+?))\\\"', re.MULTILINE), # emojis
@@ -557,29 +595,9 @@ class BitBucketExport(object):
 
         # pull requests
         if self.__options['backup_pull_requests']:
-            print('saving PRs')
-            assert len(self.current_tree_location) == 1
-            print(self.current_tree_location)
-            # self.get_and_save_json('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}/pullrequests?state=MERGED&state=OPEN&state=SUPERSEDED&state=DECLINED&pagelen=50'.format(owner=self.__owner, repo=self.__repository), ignore_rules + pr_ignores, rewrite_rules)
             self.get_and_save_json('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}'.format(owner=self.__owner, repo=self.__repository), ignore_rules + pr_ignores, rewrite_rules)
             self.tree_increment_level()
-            self.make_urls_relative()
-
-        # issues
-        # if self.__options['backup_issues']:
-        #     print('saving issues')
-        #     assert len(self.current_tree_location) == 1
-        #     print(self.current_tree_location)
-        #     self.get_and_save_json('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}/issues'.format(owner=self.__owner, repo=self.__repository), ignore_rules + issue_ignores, rewrite_rules)
-        #     self.tree_increment_level()
-
-        # # commit comments
-        # if self.__options['backup_commit_comments']:
-        #     print('saving commit comments')
-        #     assert len(self.current_tree_location) == 1
-        #     print(self.current_tree_location)
-        #     self.get_and_save_json('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}/commits'.format(owner=self.__owner, repo=self.__repository), ignore_rules + commit_comments_ignores, rewrite_rules)
-        #     self.tree_increment_level()
+            # self.make_urls_relative()
 
     @property
     def current_tree_location(self):
@@ -828,7 +846,7 @@ class BitBucketExport(object):
                     # iterate over children and replace URLs
                     for child in item['children']:
                         # print('replacing', child['url'], 'with', child['endpoint_path'].replace(r'\\', '/').replace(r'\','/'))
-                        new_url = child['endpoint_path'].replace(self.__save_path, 'bitbucket_data_relative').replace('\\\\', '/').replace('\\','/')
+                        new_url = child['endpoint_path'].replace(self.__save_path, 'data').replace('\\\\', '/').replace('\\','/')
                         data = data.replace('"{}"'.format(child['url']), '"{}"'.format(new_url)) # JSON value
                         data = data.replace(r'\"{}\"'.format(child['url']), r'\"{}\"'.format(new_url)) # escaped HTML image src in JSON
                         data = data.replace('![]({})'.format(child['url']), '![]({})'.format(new_url)) # markdown image format

@@ -12,7 +12,7 @@ var app = angular.module('BitbucketBackupApp', [
 
 app.run(function($rootScope, $http) {
   $rootScope.project_name = 'empty';
-  $rootScope.relative_project_url = 'bitbucket_data_relative/repositories/philipstarkey/qtutils/';
+  $rootScope.relative_project_url = 'data/repositories/philipstarkey/qtutils/';
   $http.get($rootScope.relative_project_url + '../qtutils.json').then(function(response) {
     $rootScope.project_name = response.data['name'];
     $rootScope.project_data = response.data;
