@@ -4,7 +4,7 @@
 angular.
   module('indexPage').
   component('indexPage', {
-    templateUrl: 'index-page/index-page.template.html',
+    templateUrl: 'ng/index-page/index-page.template.html',
     controller: ['$http', '$routeParams', '$scope', '$rootScope', function IndexPageController($http, $routeParams, $scope, $rootScope) {
         var self = this;
         self.scope = $scope;

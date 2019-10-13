@@ -4,7 +4,7 @@
 angular.
   module('sidebarLinks').
   component('sidebarLinks', {
-    templateUrl: 'sidebar-links/sidebar-links.template.html',
+    templateUrl: 'ng/sidebar-links/sidebar-links.template.html',
     controller: ['$http', '$rootScope', function sidebarLinksController($http, $routeScope) {
         var self = this;
         

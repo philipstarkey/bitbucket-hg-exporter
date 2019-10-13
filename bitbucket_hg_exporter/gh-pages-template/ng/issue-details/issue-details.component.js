@@ -4,7 +4,7 @@
 angular.
   module('issueDetails').
   component('issueDetails', {
-    templateUrl: 'issue-details/issue-details.template.html',
+    templateUrl: 'ng/issue-details/issue-details.template.html',
     controller: ['$http', '$routeParams', '$sce', '$rootScope', function IssueDetailsController($http, $routeParams, $sce, $rootScope) {
         var self = this;
 

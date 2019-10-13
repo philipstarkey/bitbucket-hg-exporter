@@ -4,7 +4,7 @@
 angular.
   module('issuesList').
   component('issuesList', {
-    templateUrl: 'issues-list/issues-list.template.html',
+    templateUrl: 'ng/issues-list/issues-list.template.html',
     controller: ['$http', '$routeParams', '$rootScope', function IssueListController($http, $routeParams, $rootScope) {
         var self = this;
         self.orderProp = 'id';
