@@ -24,6 +24,15 @@ angular.
           self.comments = response.data;
           angular.forEach(self.comments['values'], function(value, index){
             self.comments['values'][index]['content']['html'] = $sce.trustAsHtml(self.comments['values'][index]['content']['html']);
+
+            $http.get($rootScope.projects[self.project_slug]['project_path'] + 'issues/' + self.issueId + '/changes/' + self.comments['values'][index]['id'] + '.json').then(
+              function (change_response) {
+                self.comments['values'][index]['changes'] = change_response.data
+              },
+              function errorCallback(change_response) {
+                self.comments['values'][index]['changes'] = {};
+              }
+            );
           });
 
           // Now that the comments are (about to be) loaded

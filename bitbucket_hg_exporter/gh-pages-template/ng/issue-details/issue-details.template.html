@@ -59,6 +59,39 @@
         <div ng-repeat="comment in $ctrl.comments.values" class="panel panel-default">
           <div class="panel-heading" ng-attr-id="comment-{{comment.id}}"><img ng-src="{{comment.user.links.avatar.href}}" height="32" width="32" class="img-rounded" /> {{comment.user.display_name}}<span ng-if="$ctrl.issue.reporter.uuid==comment.user.uuid"> <span class="label label-primary">Reporter</span></span></div>
           <div class="panel-body">
+            <span ng-show="comment.changes">
+              <ul>
+                <li ng-repeat="(type,change) in comment.changes.changes" ng-if="type!='assignee_account_id'">
+                  <span ng-switch="type">
+                  <span ng-switch-when="content">Edited description</span>
+                  <span ng-switch-when="priority">Priority changed from {{change.old}} to {{change.new}}</span>
+                  <span ng-switch-when="kind">Issue changed from {{change.old}} to {{change.new}}</span>
+                  <span ng-switch-when="state">Status changed from {{change.old}} to {{change.new}}</span>
+                  <span ng-switch-when="version">
+                      <span ng-if="!change.old">Version set to {{change.new}}</span>
+                      <span ng-if="change.old && change.new">Version changed from {{change.old}} to {{change.new}}</span>
+                      <span ng-if="change.old && !change.new">Removed from version {{change.old}}</span>
+                  </span>
+                  <span ng-switch-when="milestone">
+                      <span ng-if="!change.old">Milestone set to {{change.new}}</span>
+                      <span ng-if="change.old && change.new">Milestone changed from {{change.old}} to {{change.new}}</span>
+                      <span ng-if="change.old && !change.new">Removed from milestone {{change.old}}</span>
+                  </span>
+                  <span ng-switch-when="component">
+                    <span ng-if="!change.old">Component set to {{change.new}}</span>
+                    <span ng-if="change.old && change.new">Component changed from {{change.old}} to {{change.new}}</span>
+                    <span ng-if="change.old && !change.new">Removed from component {{change.old}}</span>
+                  </span>
+                  <span ng-switch-when="assignee">
+                    <span ng-if="!change.old">Issue assigned to {{change.new}}</span>
+                    <span ng-if="change.old && change.new">Issue assigned from {{change.old}} to {{change.new}}</span>
+                    <span ng-if="change.old && !change.new">Issue unassigned from {{change.old}}</span>
+                  </span>
+                  <span ng-switch-default>{{type}} changed from {{change.old}} to {{change.new}}</span>
+                </span>
+                </li>
+              </ul>
+            </span>
             <span ng-bind-html="comment.content.html"></span>
             <span uib-tooltip="{{comment.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right"><a target="_self" ng-href="#!/{{$ctrl.project_slug}}/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage}}#comment-{{comment.id}}">{{comment.created_on | date: 'yyyy-MM-dd'}}</a></span>
           </div>
