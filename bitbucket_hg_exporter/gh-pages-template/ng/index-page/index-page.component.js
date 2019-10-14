@@ -5,10 +5,9 @@ angular.
   module('indexPage').
   component('indexPage', {
     templateUrl: 'ng/index-page/index-page.template.html',
-    controller: ['$http', '$routeParams', '$scope', '$rootScope', function IndexPageController($http, $routeParams, $scope, $rootScope) {
+    controller: ['$http', '$routeParams', '$rootScope', function IndexPageController($http, $routeParams, $rootScope) {
         var self = this;
-        self.scope = $scope;
-        console.log($rootScope.project_data)
+        self.project_slug = $routeParams.project;
         
     }]
   });

@@ -26,8 +26,9 @@ angular.
 
         //pagination info
         self.currentPage = $routeParams.pageId;
+        self.project_slug = $routeParams.project;
       
-        $http.get($rootScope.relative_project_url+'issuespagelen=100&page='+self.currentPage+'.json').then(function(response) {
+        $http.get($rootScope.projects[self.project_slug]['project_path']+'issuespagelen=100&page='+self.currentPage+'.json').then(function(response) {
             self.issues = response.data;
         });
         

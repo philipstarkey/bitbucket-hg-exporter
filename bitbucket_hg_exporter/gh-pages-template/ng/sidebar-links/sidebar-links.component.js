@@ -5,9 +5,13 @@ angular.
   module('sidebarLinks').
   component('sidebarLinks', {
     templateUrl: 'ng/sidebar-links/sidebar-links.template.html',
-    controller: ['$http', '$rootScope', function sidebarLinksController($http, $routeScope) {
+    controller: ['$http', '$rootScope', '$routeParams', function sidebarLinksController($http, $routeScope, $routeParams) {
         var self = this;
-        
-  console.log('c')
+        self.project_slug = $routeParams.project;
+
+        self.links = [
+              {text: 'Home', url:'#!/'+ self.project_slug},
+              {text: 'Issues', url:'#!/'+self.project_slug+'/issues'},
+            ];
     }]
   });

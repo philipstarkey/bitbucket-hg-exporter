@@ -46,7 +46,7 @@
                 </thead>
                 <tbody>
                     <tr ng-repeat="issue in $ctrl.issues.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
-                        <td><a href="#!/issue/{{issue.id}}">#{{issue.id}}: {{issue.title}}</a></td>
+                        <td><a href="#!/{{$ctrl.project_slug}}/issue/{{issue.id}}">#{{issue.id}}: {{issue.title}}</a></td>
                         <td><img ng-src="{{issue.reporter.links.avatar.href}}"  height="32" width="32" class="img-rounded" /> {{issue.reporter.display_name}}</td>
                         <td>{{issue.kind}}</td>
                         <td>{{issue.priority}}</td>
@@ -62,9 +62,9 @@
                 </tbody>
             </table>
           
-            <span ng-show="$ctrl.currentPage > 1"><a href="#!/issues/page/{{$ctrl.currentPage-1 | number:0}}">&laquo; Prev</a></span>
+            <span ng-show="$ctrl.currentPage > 1"><a href="#!/{{$ctrl.project_slug}}/issues/page/{{$ctrl.currentPage-1 | number:0}}">&laquo; Prev</a></span>
             | <strong>Page {{$ctrl.currentPage}}</strong> |
-            <span ng-show="$ctrl.issues.next"><a href="#!/issues/page/{{$ctrl.currentPage+1 | number:0}}">Next &raquo;</a></span>
+            <span ng-show="$ctrl.issues.next"><a href="#!/{{$ctrl.project_slug}}/issues/page/{{$ctrl.currentPage+1 | number:0}}">Next &raquo;</a></span>
           </div>
         </div>
       </div>

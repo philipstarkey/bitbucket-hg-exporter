@@ -6,6 +6,7 @@
 # bitbucket-hg-exporter is distributed under a custom license.
 # See the LICENSE file in the GitHub repository for further details.
 
+import argparse
 import copy
 import json
 import getpass
@@ -95,23 +96,42 @@ class MigrationProject(object):
             'bitbucket_hg_download_complete': False,
         }
 
-        # prompt for new/load
+        p = argparse.ArgumentParser()
+        p.add_argument('--load', action='store_true')
+        p.add_argument('--storage-dir')
+        p.add_argument('--project-name')
+        arguments = p.parse_args()
+
         choices = {"Start new project":0, "Load project":1}
-        response = q.select("What do you want to do?", choices=choices.keys()).ask()
+        if arguments.load:
+            response=list(choices.keys())[1]
+        else:
+            # prompt for new/load
+            response = q.select("What do you want to do?", choices=choices.keys()).ask()
+
         if choices[response] == 0:
             self.__start_project()
         elif choices[response] == 1:
-            self.__load_project()
+            kwargs = {}
+            if arguments.storage_dir is not None:
+                kwargs['location'] = arguments.storage_dir
+            if arguments.project_name is not None:
+                kwargs['project'] = arguments.project_name
+            self.__load_project(**kwargs)
         else:
             raise RuntimeError('Unknown option selected')
 
-    def __load_project(self):
+    def __load_project(self, location=os.getcwd(), project=None):
         project_found = False
-        location = os.getcwd()
+        first_run = True
         while not project_found:
-            location = q.text("Where is the project folder located?", default=location).ask()
-            project_name = q.select("Select a project to load?", choices=os.listdir(location)).ask()
-            
+            if not first_run or location == os.getcwd():
+                location = q.text("Where is the project folder located?", default=location).ask()
+            if not first_run or project is None:
+                project_name = q.select("Select a project to load?", choices=os.listdir(location)).ask()
+            elif first_run and project is not None:
+                project_name = project
+
             path = os.path.join(location, project_name, 'project.json')
             if os.path.exists(path):
                 try:
@@ -123,6 +143,7 @@ class MigrationProject(object):
             else:
                 print('Could not find {}. Please select a differet folder.'.format(path))
 
+            first_run = False
 
         # make sure we have a password/token or ask for it
         self.__get_password('bitbucket', self.__settings['master_bitbucket_username'], silent=False)
@@ -207,6 +228,17 @@ class MigrationProject(object):
                         pass
             if do_copy:
                 copy_tree(os.path.join(os.path.dirname(__file__), 'gh-pages-template'), os.path.join(self.__settings['project_path'], 'gh-pages'))
+
+            # write out a list of downloaded repos and a link to their top level JSON file
+            with open(os.path.join(self.__settings['project_path'], 'gh-pages', 'repos.json'), 'w') as f:
+                data = {}
+                for repository in self.__settings['bb_repositories_to_export']:
+                    data[repository['slug']] = {
+                        'project_file': 'data/repositories/{owner}/{repo}.json'.format(owner=self.__settings['bitbucket_repo_owner'], repo=repository['slug']),
+                        'project_path': 'data/repositories/{owner}/{repo}/'.format(owner=self.__settings['bitbucket_repo_owner'], repo=repository['slug']),
+                    }
+                json.dump(data, f, indent=4)
+            # write out a site pages list
 
         elif choices[response] == 1:
             sys.exit(0)
