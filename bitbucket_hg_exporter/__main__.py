@@ -10,6 +10,7 @@ import argparse
 import copy
 import json
 import getpass
+import html
 import queue
 import re
 import requests
@@ -23,6 +24,8 @@ from urllib import parse
 
 from OpenSSL.SSL import SysCallError
 from distutils.dir_util import copy_tree
+
+from . import hg2git
 
 bitbucket_api_url = 'https://api.bitbucket.org/2.0/'
 github_api_url = 'https://api.github.com/'
@@ -304,6 +307,7 @@ class MigrationProject(object):
             # TODO: reprocess PR comments so they are in a useful order?
 
             # clone the Hg repos (including forks if specified)
+            logs = {}
             for repository in self.__settings['bb_repositories_to_export']:
                 # TODO: clone forks too!
                 # TODO: clone wikis
@@ -330,6 +334,9 @@ class MigrationProject(object):
                     if p.returncode:
                         print('Failed to hg update (pull) from {}'.format(clone_url))
                         sys.exit(0)
+
+                # Generate mapping for rewriting changesets and other items
+                logs[repository['full_name']] = {'hg': hg2git.get_hg_log(clone_dest)}
 
             github_auth = (self.__settings['master_github_username'], self.__get_password('github', self.__settings['master_github_username']))
             github_headers = {"Accept": "application/vnd.github.barred-rock-preview"}
@@ -460,8 +467,8 @@ class MigrationProject(object):
                 # TODO: clone forks too!
                 # TODO: use password from github keyring?
                 clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
+                clone_url =  github_data['repository']['clone_url']
                 if not os.path.exists(os.path.join(clone_dest, '.git', 'index')):
-                    clone_url =  github_data['repository']['clone_url']
                     p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
                     p.communicate()
                     if p.returncode:
@@ -475,10 +482,19 @@ class MigrationProject(object):
                         sys.exit(0)
 
 
-            # Generate mapping for rewriting changesets
+                # Generate mapping for rewriting changesets and other items
+                logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
 
             # rewrite repository URLS (especiallly inter-repo issues and PRs and forks if appropriate) and changesets    
             # (also use the additional URLs to rewrite JSON file)
+            #
+            # Things we need to handle that probably aren't at the moment
+            #   * markup-less commit references
+            #   * URLS in issues such as links to forks, issues, and changesets (which currently always have a api.bitbucket.org link that is malformed...)
+            #   * decide if we want to rewrite the commit messages in the git repository, which means we need to:
+            #       a) Do it in the order of earlist to latest (since commit hashes will change when we do this)
+            #       b) update the acquired git log with the new hash
+            #       c) Make sure that all the authors are mapped appropriately since force pushing to the github repo will result in you not being able to map any more users.
 
             # Upload issues to GitHub if requested (using rewritten URLs/changesets)
 
@@ -794,10 +810,18 @@ class BitBucketExport(object):
 
 
     def backup_api(self):
+        self.__repository_list = []
         for repository in self.__options['bb_repositories_to_export']:
             # this is a bit of a hack but whatever!
-            self.__repository = repository['slug']
+            self.__owner, self.__repository = repository['full_name'].split('/')
+            self.__repository_list.append(tuple(repository['full_name'].split('/')))
+            self.__files_downloaded = 0
+            self.__duplicates_skipped = 0
+            self.__already_downloaded = 0
+            self.__time_of_last_update = time.time()-1
+            self.__print_update()
             self.__backup_api()
+            self.__print_update(end="\n", force=True)
 
     def __backup_api(self):    
         self.file_download_regexes = [
@@ -999,6 +1023,10 @@ class BitBucketExport(object):
 
         return endpoint, params
 
+    def __print_update(self, end="\r", force=False):
+        if time.time()-self.__time_of_last_update > 0.25 or force:
+            print('{}/{}: Downloaded {} files ({} already downloaded, skipped {} duplicate URLs)'.format(self.__owner, self.__repository, self.__files_downloaded, self.__already_downloaded, self.__duplicates_skipped), end=end)
+
     def download_file(self, base_url):
         # convert url to save path
         # remove '/' before the decode as the ones that exist prior to the decode as real characters
@@ -1020,6 +1048,8 @@ class BitBucketExport(object):
         if os.path.exists(save_path):
             # mark as already processed
             tree[-1]['already_processed'] = True
+            self.__already_downloaded += 1
+            self.__print_update()
             return
 
         # create the dir structure
@@ -1033,6 +1063,9 @@ class BitBucketExport(object):
         with open(save_path, 'wb') as fd:
             for chunk in r.iter_content(1024**2): # 1Mb chunk size
                 fd.write(chunk)
+
+        self.__files_downloaded += 1
+        self.__print_update()
 
     def get_and_save_json(self, base_url, ignore_rules, rewrite_rules):
         # TODO: handle resume from partial download 
@@ -1073,24 +1106,33 @@ class BitBucketExport(object):
             if response.already_processed:
                 # mark as already processed
                 tree[-1]['already_processed'] = True
+                self.__duplicates_skipped += 1
+                self.__print_update()
                 return
+            else:
+                self.__already_downloaded += 1
         else:
             response = bb_query_api(rewritten_base_url, auth=self.__credentials)
+            self.__files_downloaded += 1
+            self.__print_update()
         
         # print some debug info        
-        print(self.current_tree_location, base_url)
+        # print(self.current_tree_location, base_url)
         if rewritten_base_url != base_url:
-            print(self.current_tree_location, rewritten_base_url)
+            pass
+            # print(self.current_tree_location, rewritten_base_url)
 
         if response.status_code == 200:
             # save the data
             try:
                 json_data = response.json()
             except BaseException:
-                print('Not a JSON response, ignoring')
-                print('     original endpoint:', base_url)
-                print('    rewritten endpoint:', rewritten_base_url)
+                # print('Not a JSON response, ignoring')
+                # print('     original endpoint:', base_url)
+                # print('    rewritten endpoint:', rewritten_base_url)
                 # print('    data:', response.text)
+                self.__files_downloaded -= 1
+                self.__print_update(force=True)
                 return
         
             with open(endpoint_path, 'w') as f:
@@ -1108,7 +1150,7 @@ class BitBucketExport(object):
                 results = compiled_regex.findall(response.text)
                 for result in results:
                     try:
-                        print('downloading file: {}'.format(result))
+                        # print('downloading file: {}'.format(result))
                         self.download_file(result)
                         self.tree_increment_level()
                     except BaseException:
@@ -1156,16 +1198,27 @@ class BitBucketExport(object):
 
         elif response.status_code == 401:
             print("ERROR: Access denied for endpoint {endpoint}. No data was saved. Check your credentials and access permissions.".format(endpoint=rewritten_endpoint))
+            self.__files_downloaded -= 1
+            self.__print_update(force=True)
         elif response.status_code == 404:
-            print("ERROR: Repository {repo} doesn't exist for endpoint {endpoint}".format(endpoint=rewritten_endpoint, repo=self.__repository))
+            print("ERROR: API endpoint {endpoint} doesn't exist".format(endpoint=rewritten_endpoint, repo=self.__repository))
+            self.__files_downloaded -= 1
+            self.__print_update(force=True)
         else:
             print("ERROR: Unexpected response code {code} for endpoint {endpoint}".format(code=response.status_code, endpoint=rewritten_endpoint))
+            self.__files_downloaded -= 1
+            self.__print_update(force=True)
 
-    def make_urls_relative(self, tree=None):
+    def make_urls_relative(self, tree=None, parent_percent=0, parent_percent_subset=100.0):
         # tree.append({'url': base_url, 'rewritten_url': rewritten_base_url, 'endpoint_path':endpoint_path, 'already_processed': False, 'children': []})
         
+        top_level = False
         if tree is None:
             tree = self.__tree
+            top_level = True
+            print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
+        if len(tree):
+            parent_percent_subset = parent_percent_subset/len(tree)
 
         for item in tree:
             # get new path
@@ -1200,6 +1253,11 @@ class BitBucketExport(object):
                         data = data.replace(r'\"{}\"'.format(child['url']), r'\"{}\"'.format(new_url)) # escaped HTML image src in JSON
                         data = data.replace('![]({})'.format(child['url']), '![]({})'.format(new_url)) # markdown image format
 
+                    # fix weird URLS that exist which aren't valid api endpoints, but BitBucket puts them in the content...WTF?
+                    # data = re.sub(r'\\\"(https\:\/\/api\.bitbucket\.org\/(.*?)\/(.*?)\/(.*?))\\\"', self.fix_stupid_bitbucket_urls, data, flags=re.MULTILINE)
+                    data = re.sub(r'\\\"(https\:\/\/api\.bitbucket\.org\/(.*?)\/(.*?)((\\\")|(\/(.*?))\\\"))', self.fix_stupid_bitbucket_urls, data, flags=re.MULTILINE)
+                    data = re.sub(r'(\\\"\/.*?(\&\#109;\&\#97;\&\#105;\&\#108;\&\#116;\&\#111;\&\#58;)(.*?)\\\")', self.fix_stupid_bitbucket_email_links, data, flags=re.MULTILINE)
+
                     # save file
                     with open(new_path, 'w') as f:
                         f.write(data)
@@ -1208,7 +1266,30 @@ class BitBucketExport(object):
                     shutil.copyfile(item['endpoint_path'], new_path)
 
             # recurse over children
-            self.make_urls_relative(item['children'])
+            self.make_urls_relative(item['children'], parent_percent=parent_percent, parent_percent_subset=parent_percent_subset)
+            parent_percent += parent_percent_subset
+            print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
+
+        if top_level:
+            print('Rewriting URLs in downloaded API data: 100.0% complete')
+
+    def fix_stupid_bitbucket_urls(self, matchobj):
+        # If the URL matches one of the respositories we are backing up, rewrite it to point to the correct
+        # static HTML page
+        if (matchobj.group(2), matchobj.group(3)) in self.__repository_list:
+            return r'\"#!/{m2}/{m3}{m4}'.format(m2=matchobj.group(2), m3=matchobj.group(3), m4=matchobj.group(4))
+        else:
+            # it's a link to repository that we are not backing up. We'll redirect it to the actual bitbucket website for posterity,
+            # although it is unlikely the URL will exist beyond the BitBucket shutdown. It's possible the owner will put up a redirect
+            # at some point though!
+            if 'https://api.bitbucket.org/2.0/' not in matchobj.group(0) and 'https://api.bitbucket.org/1.0/' not in matchobj.group(0):
+                return matchobj.group(0).replace('https://api.bitbucket.org', 'https://bitbucket.org')
+            # otherwise it's an API endpoint that exists in HTML code. So we'll leave it, as it was probably put there deliberately by a user, not the BitBucket API
+            return matchobj.group(0)
+
+    def fix_stupid_bitbucket_email_links(self, matchobj):
+        return r'\"mailto:{}\"'.format(html.unescape(matchobj.group(3)))
+
 
 class DummyResponse(object):
     cache = {}
