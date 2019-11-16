@@ -7,6 +7,7 @@
 # See the LICENSE file in the GitHub repository for further details.
 
 import argparse
+from collections import OrderedDict
 import copy
 import json
 import getpass
@@ -102,6 +103,12 @@ def ghapi_json(endpoint, auth, params=None, data=None, headers=None):
 
     return response.status_code, json_response
 
+
+def flatten_comments(hierarchy, comments, reordered_comments):
+    for h in hierarchy.values():
+        reordered_comments.append(comments[h['index']])
+        flatten_comments(h['children'], comments, reordered_comments)
+    return reordered_comments
 
 
 import keyring
@@ -304,7 +311,81 @@ class MigrationProject(object):
                 json.dump(data, f, indent=4)
             # TODO: write out a site pages list for search indexing
 
-            # TODO: reprocess PR comments so they are in a useful order?
+            # reprocess:
+            #   * PR comments so they are in a useful order
+            for repository in self.__settings['bb_repositories_to_export']:
+                # open repo.json file, find location of pull requests list
+                data_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
+                pull_request_path = None
+                with open(data_path + '.json', 'r') as f:
+                    repo_data = json.load(f)
+                    if "links" in repo_data and "pullrequests" in repo_data['links'] and 'href' in repo_data['links']['pullrequests']:
+                        pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
+
+                # open that file, iterate over each pull requests, and find links to comments
+                pull_request_comment_paths = []
+                while pull_request_path is not None:
+                    with open(pull_request_path, 'r') as f:
+                        pull_requests_data = json.load(f)
+                        for pull_request in pull_requests_data['values']:
+                            if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
+                                pull_request_comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
+                        if "next" in pull_requests_data:
+                            pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
+                        else:
+                            pull_request_path = None
+
+
+                for pull_request_file in pull_request_comment_paths:
+                    comment_files = [pull_request_file]
+                    comments = []
+                    # Load all comments into RAM, then recursively iterate finding all the ones that have no parent, then all children of the top level, then children of that level, etc. etc. until all comments are placed into a hierarchy. 
+                    while pull_request_file:
+                        with open(pull_request_file, 'r') as f:
+                            comment_data = json.load(f)
+                            if 'values' in comment_data:
+                                comments.extend(comment_data['values'])
+
+                            if 'next' in comment_data:
+                                pull_request_file = comment_data['next']
+                                comment_files.append(pull_request_file)
+                            else:
+                                pull_request_file = None
+
+                    done_idxs = []
+                    comment_flat = {}
+                    comment_hierarchy = OrderedDict()
+                    while len(done_idxs) < len(comments):
+                        for i, comment in enumerate(comments):
+                            if i in done_idxs:
+                                continue
+                            found_parent = False
+                            if "parent" not in comment:
+                                parent = comment_hierarchy
+                                found_parent = True
+                            elif comment['parent']['id'] in comment_flat:
+                                parent = comment_flat[comment['parent']['id']]['children']
+                                found_parent = True
+
+                            if found_parent:
+                                done_idxs.append(i)
+                                d = {
+                                    'children': OrderedDict(),
+                                    'index': i,
+                                }
+                                parent[comment['id']] = d
+                                comment_flat[comment['id']] = d
+                    
+                    # Then flatten, split into chunks (split only on top level comments so that nested conversations don't span pages). 
+                    reordered_comments = flatten_comments(comment_hierarchy, comments, [])
+                    for i, pull_request_file in enumerate(comment_files):
+                        with open(pull_request_file, 'r') as f:
+                            comment_data = json.load(f)
+                            comment_data['values'] = reordered_comments[i*100:(i+1)*100]
+                            if len(comment_data['values']) != comment_data['size']:
+                                print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments in the file has changed.'.format(pull_request_file))
+                        with open(pull_request_file, 'w') as f:
+                            json.dump(comment_data, f)
 
             # clone the Hg repos (including forks if specified)
             logs = {}
@@ -484,6 +565,24 @@ class MigrationProject(object):
 
                 # Generate mapping for rewriting changesets and other items
                 logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
+
+            mapping = {}
+            # Write out the mapping between mercurial and gitub hashes
+            for repository in self.__settings['bb_repositories_to_export']:
+                # create the mapping
+                # TODO: add the correct URLS as arguments to BbToGh()
+                mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], '', '')
+
+                repo_api_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
+                for filename in os.listdir(os.path.join(repo_api_path, 'commit')):
+                    if filename.endswith('.json'):
+                        with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
+                            data = json.load(f)
+                        with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
+                            data['git_hash'] = mapping[repository['full_name']].hgnode_to_githash(data['hash'])
+                            json.dump(data, f)
+                            if data['git_hash'] is None:
+                                print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
 
             # rewrite repository URLS (especiallly inter-repo issues and PRs and forks if appropriate) and changesets    
             # (also use the additional URLs to rewrite JSON file)
@@ -887,7 +986,11 @@ class BitBucketExport(object):
                     {
                         'params_match':{'page':None}, 
                         'params_to_update':{'page': 1},
-                    }
+                    },
+                    {
+                        'params_match':{'sort':'*'}, 
+                        'params_to_update':{'sort': 'created_on'},
+                    },
                 ]  
             },
             # endpoints that take a max pagelen of 50 but don't have a page by default
@@ -900,6 +1003,10 @@ class BitBucketExport(object):
                     {
                         'params_match':{'pagelen':None}, 
                         'params_to_update':{'pagelen': 50},
+                    },
+                    {
+                        'params_match':{'sort':'*'}, 
+                        'params_to_update':{'sort': 'created_on'},
                     },
                 ]  
             },
@@ -915,22 +1022,17 @@ class BitBucketExport(object):
                         'params_match':{'pagelen':None}, 
                         'params_to_update':{'pagelen': 100},
                     },
+                    {
+                        'params_match':{'sort':'*'}, 
+                        'params_to_update':{'sort': 'created_on'},
+                    },
                 ]  
             },
             # endpoints that take a max pagelen of 100
             {
                 'endpoint_match':[
-                    re.compile(r'repositories\/{owner}\/{repo}/pullrequests\/(\d+)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    re.compile(r'repositories\/{owner}\/{repo}/pullrequests\/(\d+)\/statuses(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
                     re.compile(r'repositories\/{owner}\/{repo}/issues\/(\d+)\/attachments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    re.compile(r'repositories\/{owner}\/{repo}/issues\/(\d+)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    re.compile(r'repositories\/{owner}\/{repo}/commits\/.*'.format(owner=self.__owner, repo=self.__repository)),
-                    re.compile(r'repositories\/{owner}\/{repo}/commit\/(.+?)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    re.compile(r'repositories\/{owner}\/{repo}/commit\/(.+?)\/statuses(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    'repositories/{owner}/{repo}/commits'.format(owner=self.__owner, repo=self.__repository),
                     'repositories/{owner}/{repo}/components'.format(owner=self.__owner, repo=self.__repository),
-                    'repositories/{owner}/{repo}/forks'.format(owner=self.__owner, repo=self.__repository),
-                    'repositories/{owner}/{repo}/issues'.format(owner=self.__owner, repo=self.__repository),
                     'repositories/{owner}/{repo}/milestones'.format(owner=self.__owner, repo=self.__repository),
                     'repositories/{owner}/{repo}/refs'.format(owner=self.__owner, repo=self.__repository),
                     'repositories/{owner}/{repo}/refs/branches'.format(owner=self.__owner, repo=self.__repository),
@@ -946,6 +1048,34 @@ class BitBucketExport(object):
                         'params_match':{'page':None}, 
                         'params_to_update':{'page': 1},
                     }
+                ]  
+            },
+            # endpoints that take a max pagelen of 100 and should be sorted by creation date
+            {
+                'endpoint_match':[
+                    re.compile(r'repositories\/{owner}\/{repo}/pullrequests\/(\d+)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
+                    re.compile(r'repositories\/{owner}\/{repo}/pullrequests\/(\d+)\/statuses(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
+                    re.compile(r'repositories\/{owner}\/{repo}/issues\/(\d+)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
+                    re.compile(r'repositories\/{owner}\/{repo}/commit\/(.+?)\/comments(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
+                    re.compile(r'repositories\/{owner}\/{repo}/commit\/(.+?)\/statuses(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
+                    re.compile(r'repositories\/{owner}\/{repo}/commits\/.*'.format(owner=self.__owner, repo=self.__repository)),
+                    'repositories/{owner}/{repo}/commits'.format(owner=self.__owner, repo=self.__repository),
+                    'repositories/{owner}/{repo}/forks'.format(owner=self.__owner, repo=self.__repository),
+                    'repositories/{owner}/{repo}/issues'.format(owner=self.__owner, repo=self.__repository),
+                ], 
+                'rewrites':[
+                    {
+                        'params_match':{'pagelen':None}, 
+                        'params_to_update':{'pagelen': 100},
+                    },
+                    {
+                        'params_match':{'page':None}, 
+                        'params_to_update':{'page': 1},
+                    },
+                    {
+                        'params_match':{'sort':'*'}, 
+                        'params_to_update':{'sort': 'created_on'},
+                    },
                 ]  
             },
             # endpoints that take a max pagelen of 5000
@@ -1003,7 +1133,9 @@ class BitBucketExport(object):
                 for rewrite in rule['rewrites']:
                     do_rewrite = True
                     for match_param_name, match_param_value in rewrite['params_match'].items():
-                        if match_param_value is None:
+                        if match_param_value == '*':
+                            continue
+                        elif match_param_value is None:
                             if match_param_name in params and params[match_param_name] != match_param_value:
                                 do_rewrite = False
                                 break

@@ -268,6 +268,7 @@ def get_git_log(repo_path):
     cmd = [
         "git",
         "log",
+        "--all",
         "--date-order",
         "--reverse",
         "--pretty=format:{node}%H{item}%ad{item}%ae{item}%B".format(
