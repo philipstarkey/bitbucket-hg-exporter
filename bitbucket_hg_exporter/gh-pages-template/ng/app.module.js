@@ -9,6 +9,7 @@ var app = angular.module('BitbucketBackupApp', [
   'indexPage',
   'sidebarLinks',
   'repoList',
+  'pullrequestsList'
 ]);
 
 app.run(function($rootScope, $location, $anchorScroll, $routeParams, $http, $timeout) {

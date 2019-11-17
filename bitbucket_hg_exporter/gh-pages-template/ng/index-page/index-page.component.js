@@ -10,4 +10,15 @@ angular.
         self.project_slug = $routeParams.project;
         
     }]
+  }).
+  component('author', {
+    templateUrl: 'ng/index-page/author.template.html',
+    controller: ['$http', '$routeParams', '$rootScope', function IndexPageController($http, $routeParams, $rootScope) {
+      var self = this;
+      
+    }],
+    bindings: {
+      author: '=',
+      showname: '='
+    }
   });

@@ -12,6 +12,7 @@ angular.
         self.links = [
               {text: 'Home', url:'#!/'+ self.project_slug},
               {text: 'Issues', url:'#!/'+self.project_slug+'/issues'},
+              {text: 'Pull Requests', url:'#!/'+self.project_slug+'/pull-requests'},
             ];
     }]
   });

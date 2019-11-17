@@ -14,13 +14,13 @@
               <div style="float:right">
                 <table class="table table-bordered">
                   <tr>
-                    <td>Reporter: {{$ctrl.issue.reporter.display_name}} <img ng-src="{{$ctrl.issue.reporter.links.avatar.href}}"  height="32" width="32" class="img-rounded" /></td>
+                    <td>Reporter: <author showname="true" author="$ctrl.issue.reporter"></author></td>
                   </tr>
                   <tr>
                     <td>Created on: <span uib-tooltip="{{$ctrl.issue.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.issue.created_on | date: 'yyyy-MM-dd'}}</span></td>
                   </tr>
                   <tr>
-                    <td>Assignee: {{$ctrl.issue.assignee.display_name}}</td>
+                    <td>Assignee: <author showname="true" author="$ctrl.issue.assignee"></author></td>
                   </tr>
                   <tr>
                     <td>Type: {{$ctrl.issue.kind}}</td>
@@ -57,7 +57,7 @@
         <h3>Comments ({{$ctrl.comments.size}})</h3>
 
         <div ng-repeat="comment in $ctrl.comments.values" class="panel panel-default">
-          <div class="panel-heading" ng-attr-id="comment-{{comment.id}}"><img ng-src="{{comment.user.links.avatar.href}}" height="32" width="32" class="img-rounded" /> {{comment.user.display_name}}<span ng-if="$ctrl.issue.reporter.uuid==comment.user.uuid"> <span class="label label-primary">Reporter</span></span></div>
+          <div class="panel-heading" ng-attr-id="comment-{{comment.id}}"><author showname="true" author="comment.user"></author><span ng-if="$ctrl.issue.reporter.uuid==comment.user.uuid"> <span class="label label-primary">Reporter</span></span></div>
           <div class="panel-body">
             <span ng-show="comment.changes">
               <ul>
@@ -93,13 +93,13 @@
               </ul>
             </span>
             <span ng-bind-html="comment.content.html"></span>
-            <span uib-tooltip="{{comment.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right"><a target="_self" ng-href="#!/{{$ctrl.project_slug}}/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage}}#comment-{{comment.id}}">{{comment.created_on | date: 'yyyy-MM-dd'}}</a></span>
+            <span uib-tooltip="{{comment.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right"><a target="_self" ng-href="#!/{{$ctrl.project_slug}}/issues/{{$ctrl.issueId}}/page/{{$ctrl.commentPage}}#comment-{{comment.id}}">{{comment.created_on | date: 'yyyy-MM-dd'}}</a></span>
           </div>
         </div>
 
-        <span ng-show="$ctrl.commentPage > 1"><a href="#!/{{$ctrl.project_slug}}/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage-1 | number:0}}">&laquo; Prev</a></span>
+        <span ng-show="$ctrl.commentPage > 1"><a href="#!/{{$ctrl.project_slug}}/issues/{{$ctrl.issueId}}/page/{{$ctrl.commentPage-1 | number:0}}">&laquo; Prev</a></span>
         | <strong>Page {{$ctrl.commentPage}}</strong> |
-        <span ng-show="$ctrl.comments.next"><a href="#!/{{$ctrl.project_slug}}/issue/{{$ctrl.issueId}}/page/{{$ctrl.commentPage+1 | number:0}}">Next &raquo;</a></span>
+        <span ng-show="$ctrl.comments.next"><a href="#!/{{$ctrl.project_slug}}/issues/{{$ctrl.issueId}}/page/{{$ctrl.commentPage+1 | number:0}}">Next &raquo;</a></span>
 
       </div>
     </div>

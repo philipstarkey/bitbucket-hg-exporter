@@ -11,25 +11,42 @@ angular.
         when('/:owner/:project', {
           template: '<index-page></index-page>'
         }).
+        // Issues list
         when('/:owner/:project/issues', {
           redirectTo: '/:owner/:project/issues/page/1'
         }).
         when('/:owner/:project/issues/page/:pageId', {
           template: '<issues-list></issues-list>'
         }).
-        when('/:owner/:project/issue/:issueId/page/:pageId?', {
+        // Issue details
+        when('/:owner/:project/issues/:issueId/page/:pageId?', {
           template: '<issue-details></issue-details>',
           reloadOnSearch: false,
         }).
-        when('/:owner/:project/issue/:issueId', {
-          redirectTo: '/:owner/:project/issue/:issueId/page/1'
+        when('/:owner/:project/issues/:issueId', {
+          redirectTo: '/:owner/:project/issues/:issueId/page/1'
         }).
+        when('/:owner/:project/issue/:issueId', {
+          redirectTo: '/:owner/:project/issues/:issueId/page/1'
+        }).
+        when('/:owner/:project/issue/:issueId/page/:pageId?', {
+          redirectTo: '/:owner/:project/issues/:issueId/page/:pageId'
+        }).
+        // pull requests list
+        when('/:owner/:project/pull-requests/page/:pageId?', {
+          template: '<pullrequests-list></pullrequests-list>',
+          reloadOnSearch: false,
+        }).
+        when('/:owner/:project/pull-requests', {
+          redirectTo: '/:owner/:project/pull-requests/page/1'
+        }).
+        // pull requests details
         when('/:owner/:project/pull-requests/:prId/page/:pageId?', {
-          template: '<issue-details></issue-details>',
+          template: '<pullrequest-details></pullrequest-details>',
           reloadOnSearch: false,
         }).
         when('/:owner/:project/pull-requests/:prId', {
-          redirectTo: '/:owner/:project/issue/:prId/page/1'
+          redirectTo: '/:owner/:project/pull-requests/:prId/page/1'
         }).
         otherwise('/');
     }

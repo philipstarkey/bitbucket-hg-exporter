@@ -23,13 +23,13 @@
                 </thead>
                 <tbody>
                     <tr ng-repeat="issue in $ctrl.issues.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
-                        <td><a href="#!/{{$ctrl.project_slug}}/issue/{{issue.id}}">#{{issue.id}}: {{issue.title}}</a></td>
-                        <td><img ng-src="{{issue.reporter.links.avatar.href}}"  height="32" width="32" class="img-rounded" /> {{issue.reporter.display_name}}</td>
+                        <td><a href="#!/{{$ctrl.project_slug}}/issues/{{issue.id}}">#{{issue.id}}: {{issue.title}}</a></td>
+                        <td><author showname="true" author="issue.reporter"></author></td>
                         <td>{{issue.kind}}</td>
                         <td>{{issue.priority}}</td>
                         <td><span class="label" ng-class="issue.state=='new' || issue.state=='open' ? 'label-default' : (issue.state=='resolved' || issue.state=='closed' ? 'label-success' : (issue.state=='invalid' || issue.state=='wontfix' || issue.state=='duplicate' ? 'label-danger' : (issue.state=='on hold' ? 'label-warning' :'')))">{{issue.state | uppercase}}</span></td>
                         <td>{{issue.votes}}</td>
-                        <td><img ng-show="issue.assignee" ng-src="{{issue.assignee.links.avatar.href}}"  height="32" width="32" class="img-rounded" /> {{issue.assignee.display_name}}</td>
+                        <td><author showname="true" author="issue.assignee"></author></td>
                         <td>{{issue.component.name}}</td>
                         <td>{{issue.milestone.name}}</td>
                         <td>{{issue.version.name}}</td>

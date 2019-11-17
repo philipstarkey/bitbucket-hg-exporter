@@ -1,0 +1,44 @@
+<div class="container-fluid">
+        <div class="row">
+          <div class="col-md-2">
+            <!--Sidebar content-->
+            <sidebar-links></sidebar-links>
+          </div>
+          <div class="col-md-10 table-responsive">
+            <!--Body content-->
+      
+            <h2>Pull Requests</h2>
+            <table class="pullrequests table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th nowrap ng-repeat="column in $ctrl.tableCols">
+                            <a ng-click="$ctrl.orderProp=column.index; $ctrl.reverseSort = !$ctrl.reverseSort">
+                                {{column.title}}
+                                <span ng-show="$ctrl.orderProp == '{{column.index}}'">
+                                    <span ng-class="!$ctrl.reverseSort ? 'glyphicon glyphicon-triangle-top' : 'glyphicon glyphicon-triangle-bottom'"></span>
+                                </span>
+                            </a>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr ng-repeat="pr in $ctrl.pullrequests.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
+                        <td><a href="#!/{{$ctrl.project_slug}}/pull-request/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a></td>
+                        <td><author showname="true" author="pr.author"></author></td>
+                        <td>{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</td>
+                        <td>{{pr.destination.branch.name}}</td>
+                        <td><span class="label" ng-class="pr.state=='OPEN' ? 'label-default' : (pr.state=='MERGED' ? 'label-success' : (pr.state=='DECLINED' || pr.state=='SUPERSEDED' ? 'label-danger' : ''))">{{pr.state | uppercase}}</span></td>
+                        <td><span uib-tooltip="{{pr.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.created_on | date: 'yyyy-MM-dd'}}</span></td>
+                        <td><span uib-tooltip="{{pr.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.updated_on | date: 'yyyy-MM-dd'}}</span></td>
+                        <td>{{pr.comment_count}}</td>
+                        <td><author showname="true" author="pr.closed_by"></author></td>
+                    </tr>
+                </tbody>
+            </table>
+          
+            <span ng-show="$ctrl.currentPage > 1"><a href="#!/{{$ctrl.project_slug}}/pull-requests/page/{{$ctrl.currentPage-1 | number:0}}">&laquo; Prev</a></span>
+            | <strong>Page {{$ctrl.currentPage}}</strong> |
+            <span ng-show="$ctrl.pr.next"><a href="#!/{{$ctrl.project_slug}}/pull-requests/page/{{$ctrl.currentPage+1 | number:0}}">Next &raquo;</a></span>
+          </div>
+        </div>
+      </div>
