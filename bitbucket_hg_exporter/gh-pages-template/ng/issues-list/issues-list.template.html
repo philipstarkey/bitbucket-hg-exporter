@@ -28,11 +28,11 @@
                         <td>{{issue.kind}}</td>
                         <td>{{issue.priority}}</td>
                         <td><span class="label" ng-class="issue.state=='new' || issue.state=='open' ? 'label-default' : (issue.state=='resolved' || issue.state=='closed' ? 'label-success' : (issue.state=='invalid' || issue.state=='wontfix' || issue.state=='duplicate' ? 'label-danger' : (issue.state=='on hold' ? 'label-warning' :'')))">{{issue.state | uppercase}}</span></td>
-                        <td>{{issue.votes}}</td>
+                        <td><span class="badge">{{issue.votes}}</span></td>
                         <td><author showname="true" author="issue.assignee"></author></td>
-                        <td>{{issue.component.name}}</td>
-                        <td>{{issue.milestone.name}}</td>
-                        <td>{{issue.version.name}}</td>
+                        <td><span class="badge">{{issue.component.name}}</span></td>
+                        <td><span class="badge">{{issue.milestone.name}}</span></td>
+                        <td><span class="badge">{{issue.version.name}}</span></td>
                         <td><span uib-tooltip="{{issue.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{issue.created_on | date: 'yyyy-MM-dd'}}</span></td>
                         <td><span uib-tooltip="{{issue.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{issue.updated_on | date: 'yyyy-MM-dd'}}</span></td>
                     </tr>

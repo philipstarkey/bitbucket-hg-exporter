@@ -11,7 +11,7 @@
             <!-- Default panel contents -->
             <div class="panel-heading">Issue #{{$ctrl.issue.id}} <span class="label" ng-class="$ctrl.issue.state=='new' || $ctrl.issue.state=='open' ? 'label-default' : ($ctrl.issue.state=='resolved' || $ctrl.issue.state=='closed' ? 'label-success' : ($ctrl.issue.state=='invalid' || $ctrl.issue.state=='wontfix' || $ctrl.issue.state=='duplicate' ? 'label-danger' : ($ctrl.issue.state=='on hold' ? 'label-warning' :'')))">{{$ctrl.issue.state | uppercase}}</span></div>
             <div class="panel-body">
-              <div style="float:right">
+              <div style="float:right; padding-left: 15px; padding-bottom: 15px;">
                 <table class="table table-bordered">
                   <tr>
                     <td>Reporter: <author showname="true" author="$ctrl.issue.reporter"></author></td>
@@ -29,16 +29,16 @@
                     <td>Priority: {{$ctrl.issue.priority}}</td>
                   </tr>
                   <tr>
-                    <td>Status: {{$ctrl.issue.state}}</td>
+                    <td>Status: <span class="label" ng-class="$ctrl.issue.state=='new' || $ctrl.issue.state=='open' ? 'label-default' : ($ctrl.issue.state=='resolved' || $ctrl.issue.state=='closed' ? 'label-success' : ($ctrl.issue.state=='invalid' || $ctrl.issue.state=='wontfix' || $ctrl.issue.state=='duplicate' ? 'label-danger' : ($ctrl.issue.state=='on hold' ? 'label-warning' :'')))">{{$ctrl.issue.state | uppercase}}</span></td>
                   </tr>
                   <tr ng-show="$ctrl.issue.component">
-                    <td>Component: {{$ctrl.issue.component.name}}</td>
+                    <td>Component: <span class="badge">{{$ctrl.issue.component.name}}</span></td>
                   </tr>
                   <tr ng-show="$ctrl.issue.milestone">
-                    <td>Milestone: {{$ctrl.issue.milestone.name}}</td>
+                    <td>Milestone: <span class="badge">{{$ctrl.issue.milestone.name}}</span></td>
                   </tr>
                   <tr ng-show="$ctrl.issue.version">
-                    <td>Version: {{$ctrl.issue.version.name}}</td>
+                    <td>Version: <span class="badge">{{$ctrl.issue.version.name}}</span></td>
                   </tr>
                   <tr>
                     <td>Votes: <span class="badge">{{$ctrl.issue.votes}}</span></td>

@@ -25,12 +25,12 @@
                     <tr ng-repeat="pr in $ctrl.pullrequests.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
                         <td><a href="#!/{{$ctrl.project_slug}}/pull-request/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a></td>
                         <td><author showname="true" author="pr.author"></author></td>
-                        <td>{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</td>
-                        <td>{{pr.destination.branch.name}}</td>
+                        <td><span class="badge">{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</span></td>
+                        <td><span class="badge">{{pr.destination.branch.name}}</span></td>
                         <td><span class="label" ng-class="pr.state=='OPEN' ? 'label-default' : (pr.state=='MERGED' ? 'label-success' : (pr.state=='DECLINED' || pr.state=='SUPERSEDED' ? 'label-danger' : ''))">{{pr.state | uppercase}}</span></td>
                         <td><span uib-tooltip="{{pr.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.created_on | date: 'yyyy-MM-dd'}}</span></td>
                         <td><span uib-tooltip="{{pr.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.updated_on | date: 'yyyy-MM-dd'}}</span></td>
-                        <td>{{pr.comment_count}}</td>
+                        <td><span class="badge">{{pr.comment_count}}</span></td>
                         <td><author showname="true" author="pr.closed_by"></author></td>
                     </tr>
                 </tbody>
