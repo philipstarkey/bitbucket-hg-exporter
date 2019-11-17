@@ -11,7 +11,7 @@ angular.
         //pagination info
         self.issueId = $routeParams.issueId;
         self.commentPage = $routeParams.pageId;
-        self.project_slug = $routeParams.project;
+        self.project_slug = $routeParams.owner + '/' + $routeParams.project;
         self.mainHtml = "";
       
       
@@ -20,7 +20,7 @@ angular.
             self.mainHtml = $sce.trustAsHtml(self.issue['content']['html']);
         });
 
-        $http.get($rootScope.projects[self.project_slug]['project_path']+'issues/'+self.issueId+'/commentspagelen=100&page='+self.commentPage+'.json').then(function(response) {
+        $http.get($rootScope.projects[self.project_slug]['project_path']+'issues/'+self.issueId+'/comments_page='+self.commentPage+'.json').then(function(response) {
           self.comments = response.data;
           angular.forEach(self.comments['values'], function(value, index){
             self.comments['values'][index]['content']['html'] = $sce.trustAsHtml(self.comments['values'][index]['content']['html']);

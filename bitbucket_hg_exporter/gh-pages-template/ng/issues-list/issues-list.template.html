@@ -12,36 +12,13 @@
                 <thead>
                     <tr>
                         <th nowrap ng-repeat="column in $ctrl.tableCols">
-                            <a ng-click="$ctrl.orderProp='{{column.index}}'; $ctrl.reverseSort = !$ctrl.reverseSort">
+                            <a ng-click="$ctrl.orderProp=column.index; $ctrl.reverseSort = !$ctrl.reverseSort">
                                 {{column.title}}
                                 <span ng-show="$ctrl.orderProp == '{{column.index}}'">
                                     <span ng-class="!$ctrl.reverseSort ? 'glyphicon glyphicon-triangle-top' : 'glyphicon glyphicon-triangle-bottom'"></span>
                                 </span>
                             </a>
                         </th>
-                        <!-- <th nowrap>
-                            <a ng-click="$ctrl.orderProp='id'; $ctrl.reverseSort = !$ctrl.reverseSort">
-                                Title
-                                <span ng-show="$ctrl.orderProp == 'id'">
-                                    <span ng-class="!$ctrl.reverseSort ? 'glyphicon glyphicon-triangle-top' : 'glyphicon glyphicon-triangle-bottom'"></span>
-                                </span>
-                            </a>
-                        </th>
-                        <th nowrap>
-                            <a ng-click="$ctrl.orderProp='reporter.display_name'; $ctrl.reverseSort = !$ctrl.reverseSort">
-                                Reporter
-                                <span ng-show="$ctrl.orderProp == 'reporter.display_name'">
-                                    <span ng-class="!$ctrl.reverseSort ? 'glyphicon glyphicon-triangle-top' : 'glyphicon glyphicon-triangle-bottom'"></span>
-                                </span>
-                            </a>
-                        </th>
-                        <th nowrap>Type</th>
-                        <th nowrap>Priority</th>
-                        <th nowrap>Status</th>
-                        <th nowrap>Votes</th>
-                        <th nowrap>Assignee</th>
-                        <th nowrap>Created</th>
-                        <th nowrap>Updated</th> -->
                     </tr>
                 </thead>
                 <tbody>

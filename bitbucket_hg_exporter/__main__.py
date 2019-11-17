@@ -111,6 +111,15 @@ def flatten_comments(hierarchy, comments, reordered_comments):
     return reordered_comments
 
 
+def get_all_pages(data_directory, first_filepath):
+    files = []
+    while first_filepath is not None:
+        with open(os.path.join(data_directory, *first_filepath.split('/')), 'r') as f:
+            data = json.load(f)
+            files.append(first_filepath)
+            first_filepath = data.get('next')
+    return files
+
 import keyring
 KEYRING_SERVICES = {
     'bitbucket': 'bitbucket-to-github-exporter/bitbucket',
@@ -300,14 +309,30 @@ class MigrationProject(object):
             if do_copy:
                 copy_tree(os.path.join(os.path.dirname(__file__), 'gh-pages-template'), os.path.join(self.__settings['project_path'], 'gh-pages'))
 
-            # write out a list of downloaded repos and a link to their top level JSON file
+            # write out a list of downloaded repos and a link to their top level JSON file and other important JSON files
+            top_level_repo_data = {}
             with open(os.path.join(self.__settings['project_path'], 'gh-pages', 'repos.json'), 'w') as f:
                 data = {}
                 for repository in self.__settings['bb_repositories_to_export']:
-                    data[repository['slug']] = {
-                        'project_file': 'data/repositories/{owner}/{repo}.json'.format(owner=self.__settings['bitbucket_repo_owner'], repo=repository['slug']),
-                        'project_path': 'data/repositories/{owner}/{repo}/'.format(owner=self.__settings['bitbucket_repo_owner'], repo=repository['slug']),
+                    data[repository['full_name']] = {
+                        'project_file': 'data/repositories/{}.json'.format(repository['full_name']),
+                        'project_path': 'data/repositories/{}/'.format(repository['full_name']),
                     }
+
+                    # load the top level JSON file for each project as we will use it more than once
+                    data_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
+                    pull_request_path = None
+                    with open(data_path + '.json', 'r') as g:
+                        top_level_repo_data[repository['full_name']] = json.load(g)
+
+                    # if "links" in top_level_repo_data[repository['full_name']]:
+                    #     # write out links to issue files, pull requests, etc.
+                    #     for link_type in ['issues', 'pullrequests']:
+                    #         link_filepaths = get_all_pages(
+                    #             os.path.join(self.__settings['project_path'], 'gh-pages'),
+                    #             top_level_repo_data[repository['full_name']]['links'].get(link_type, {}).get('href')
+                    #         )
+                    #         data[repository['full_name']]['{}_files'.format(link_type)] = dict(enumerate(link_filepaths, 1))
                 json.dump(data, f, indent=4)
             # TODO: write out a site pages list for search indexing
 
@@ -315,12 +340,10 @@ class MigrationProject(object):
             #   * PR comments so they are in a useful order
             for repository in self.__settings['bb_repositories_to_export']:
                 # open repo.json file, find location of pull requests list
-                data_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
                 pull_request_path = None
-                with open(data_path + '.json', 'r') as f:
-                    repo_data = json.load(f)
-                    if "links" in repo_data and "pullrequests" in repo_data['links'] and 'href' in repo_data['links']['pullrequests']:
-                        pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
+                repo_data = top_level_repo_data[repository['full_name']]
+                if "links" in repo_data and "pullrequests" in repo_data['links'] and 'href' in repo_data['links']['pullrequests']:
+                    pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
 
                 # open that file, iterate over each pull requests, and find links to comments
                 pull_request_comment_paths = []
@@ -1207,11 +1230,26 @@ class BitBucketExport(object):
         endpoint = endpoint.split('?')[0]
         # rewrite URL
         rewritten_endpoint, rewritten_params = self.rewrite_url(endpoint, params, rewrite_rules)
-
-        endpoint_path = os.path.join(self.__save_path, rewritten_endpoint)
-        
         encoded_rewritten_params = parse.urlencode(rewritten_params, doseq=True)
-        endpoint_path += encoded_rewritten_params
+
+        # modify rewritten URL for save path (does not modify the URL being queried)
+        endpoint_simplified_params = copy.deepcopy(rewritten_params)
+        # we don't need the sort order in the save path
+        if "sort" in endpoint_simplified_params:
+            del endpoint_simplified_params['sort']
+        # I think that some API urls use ctx for pagination
+        # If so, we don't want to delete the ctx if there is no other indication of pagination
+        if "page" in endpoint_simplified_params and "ctx" in endpoint_simplified_params:
+            del endpoint_simplified_params['ctx']
+        # This information is stored inside the file anyway, and every URL should be being grabbed with the 
+        # largest number of items per page anyway (to reduce the number of API calls we need to make)
+        if "pagelen" in endpoint_simplified_params:
+            del endpoint_simplified_params['pagelen']
+        endpoint_simplified_params_str = parse.urlencode(endpoint_simplified_params, doseq=True)
+        endpoint_path = os.path.join(self.__save_path, rewritten_endpoint)
+        if endpoint_simplified_params_str:
+            endpoint_path += '_'
+            endpoint_path += endpoint_simplified_params_str
         endpoint_path += ".json"
 
         # create new URL to query
