@@ -12,8 +12,8 @@ angular.
         self.tableCols = [
             {title:"Title", index:"id"},
             {title:"Author", index:"author.display_name"},
-            {title:"Source", index:"source.repository.full_name"},
-            {title:"Destination", index:"destination.branch.name"},
+            // {title:"Source", index:"source.repository.full_name"},
+            // {title:"Destination", index:"destination.branch.name"},
             {title:"Status", index:"state"},
             {title:"Created", index:"created_on"},
             {title:"Updated", index:"updated_on"},

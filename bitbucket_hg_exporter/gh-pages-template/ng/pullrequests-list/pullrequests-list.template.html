@@ -23,10 +23,12 @@
                 </thead>
                 <tbody>
                     <tr ng-repeat="pr in $ctrl.pullrequests.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
-                        <td><a href="#!/{{$ctrl.project_slug}}/pull-request/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a></td>
+                        <td>
+                            <a href="#!/{{$ctrl.project_slug}}/pull-request/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a>
+                            <br />
+                            <span class="badge" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 200px; font-size:11px;" uib-tooltip="{{pr.source.repository.full_name}}:{{pr.source.branch.name}}" tooltip-placement="bottom">{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</span> &rarr; <span class="badge" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; width: 100px; font-size:11px;" uib-tooltip="{{pr.destination.branch.name}}" tooltip-placement="bottom">{{pr.destination.branch.name}}</span>
+                        </td>
                         <td><author showname="true" author="pr.author"></author></td>
-                        <td><span class="badge">{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</span></td>
-                        <td><span class="badge">{{pr.destination.branch.name}}</span></td>
                         <td><span class="label" ng-class="pr.state=='OPEN' ? 'label-default' : (pr.state=='MERGED' ? 'label-success' : (pr.state=='DECLINED' || pr.state=='SUPERSEDED' ? 'label-danger' : ''))">{{pr.state | uppercase}}</span></td>
                         <td><span uib-tooltip="{{pr.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.created_on | date: 'yyyy-MM-dd'}}</span></td>
                         <td><span uib-tooltip="{{pr.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="bottom">{{pr.updated_on | date: 'yyyy-MM-dd'}}</span></td>
