@@ -1,4 +1,9 @@
 <span ng-if="$ctrl.author">
-    <img ng-src="{{$ctrl.author.links.avatar.href}}"  height="32" width="32" class="img-rounded" />
+    <span ng-class="{'approved':$ctrl.showapproved}">
+        <span style="width: 32px; height: 32px;">
+            <img ng-src="{{$ctrl.author.links.avatar.href}}"  height="32" width="32" class="img-rounded" />
+        </span>
+    </span>
     <span ng-show="$ctrl.showname"> {{$ctrl.author.display_name}}</span>
 </span>
+<!-- ng-style="$ctrl.showapproved === true && {'background-image': 'url(\'ng/icon-approved.svg\')', 'background-size': '12px', 'border': '2px solid #fff', 'border-radius': '8px', 'content': '', 'height': '12px', 'position': 'absolute', 'right': '-8px', 'top': '-8px', 'width': '12px'}" -->

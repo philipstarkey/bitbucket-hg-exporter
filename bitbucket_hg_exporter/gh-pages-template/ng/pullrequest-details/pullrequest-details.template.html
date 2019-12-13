@@ -1,0 +1,55 @@
+<div class="container-fluid">
+    <div class="row">
+      <div class="col-md-2">
+        <!--Sidebar content-->
+        <sidebar-links></sidebar-links>
+      </div>
+      <div class="col-md-10">
+        <!--Body content-->
+        <h2>{{$ctrl.pr.title}}</h2>
+        <div class="panel panel-primary">
+            <!-- Default panel contents -->
+            <div class="panel-heading">Pull request #{{$ctrl.pr.id}} <span class="label" ng-class="$ctrl.pr.state=='OPEN' ? 'label-default' : ($ctrl.pr.state=='MERGED' ? 'label-success' : ($ctrl.pr.state=='DECLINED' || $ctrl.pr.state=='SUPERSEDED' ? 'label-danger' : ''))">{{$ctrl.pr.state | uppercase}}</span></div>
+            <div class="panel-body">
+              <div style="float:right; padding-left: 15px; padding-bottom: 15px;">
+                <table class="table table-bordered">
+                  <tr>
+                    <td>Author: <author showname="true" author="$ctrl.pr.author"></author></td>
+                  </tr>
+                  <tr>
+                    <td>Reviewers: <author ng-repeat="reviewer in $ctrl.pr.participants | filter:{role:'REVIEWER'}" showname="false" author="reviewer.user" showapproved="reviewer.approved"></author></td>
+                  </tr>
+                  <tr>
+                    <td>Closed by: <author showname="true" author="$ctrl.pr.closed_by"></author></td>
+                  </tr>
+                  <tr>
+                    <td>Created on: <span uib-tooltip="{{$ctrl.pr.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.pr.created_on | date: 'yyyy-MM-dd'}}</span></td>
+                  </tr>
+                  <tr>
+                    <td>Updated on: <span uib-tooltip="{{$ctrl.pr.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.pr.updated_on | date: 'yyyy-MM-dd'}}</span></td>
+                  </tr>
+                </table>
+              </div>
+              <p ng-bind-html="$ctrl.mainHtml"></p>
+            </div>
+          </div>
+
+        <hr />
+
+        <h3>Comments ({{$ctrl.comments.size}})</h3>
+
+        <div ng-repeat="comment in $ctrl.comments.values" class="panel panel-default" style="margin-left:{{comment.parent.depth*50}}px;">
+          <div class="panel-heading" ng-attr-id="comment-{{comment.id}}"><author showname="true" author="comment.user"></author><span ng-if="$ctrl.pr.author.uuid==comment.user.uuid"> <span class="label label-primary">Author</span></span></div>
+          <div class="panel-body">
+            <span ng-bind-html="comment.content.html"></span>
+            <span uib-tooltip="{{comment.created_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right"><a target="_self" ng-href="#!/{{$ctrl.project_slug}}/pull-requests/{{$ctrl.prId}}/page/{{$ctrl.commentPage}}#comment-{{comment.id}}">{{comment.created_on | date: 'yyyy-MM-dd'}}</a></span>
+          </div>
+        </div>
+
+        <span ng-show="$ctrl.commentPage > 1"><a href="#!/{{$ctrl.project_slug}}/pull-requests/{{$ctrl.prId}}/page/{{$ctrl.commentPage-1 | number:0}}">&laquo; Prev</a></span>
+        | <strong>Page {{$ctrl.commentPage}}</strong> |
+        <span ng-show="$ctrl.comments.next"><a href="#!/{{$ctrl.project_slug}}/pull-requests/{{$ctrl.prId}}/page/{{$ctrl.commentPage+1 | number:0}}">Next &raquo;</a></span>
+
+      </div>
+    </div>
+  </div>

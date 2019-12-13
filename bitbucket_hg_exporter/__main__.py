@@ -104,10 +104,14 @@ def ghapi_json(endpoint, auth, params=None, data=None, headers=None):
     return response.status_code, json_response
 
 
-def flatten_comments(hierarchy, comments, reordered_comments):
+def flatten_comments(hierarchy, comments, reordered_comments, depth=0):
     for h in hierarchy.values():
-        reordered_comments.append(comments[h['index']])
-        flatten_comments(h['children'], comments, reordered_comments)
+        c = comments[h['index']]
+        # Add a depth counter so we know how far to indent, epecially if it's breaking nested commenst across pages
+        if "parent" in c:
+            c['parent']['depth'] = depth
+        reordered_comments.append(c)
+        flatten_comments(h['children'], comments, reordered_comments, depth=depth+1)
     return reordered_comments
 
 
@@ -399,14 +403,14 @@ class MigrationProject(object):
                                 parent[comment['id']] = d
                                 comment_flat[comment['id']] = d
                     
-                    # Then flatten, split into chunks (split only on top level comments so that nested conversations don't span pages). 
+                    # Then flatten, split into chunks
                     reordered_comments = flatten_comments(comment_hierarchy, comments, [])
                     for i, pull_request_file in enumerate(comment_files):
                         with open(pull_request_file, 'r') as f:
                             comment_data = json.load(f)
                             comment_data['values'] = reordered_comments[i*100:(i+1)*100]
-                            if len(comment_data['values']) != comment_data['size']:
-                                print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments in the file has changed.'.format(pull_request_file))
+                            if len(reordered_comments) != comment_data['size']:
+                                print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments we are writing does not agree with how many there were before we reordered them. There were {} comments, now {} comments'.format(pull_request_file, comment_data['size'], len(reordered_comments)))
                         with open(pull_request_file, 'w') as f:
                             json.dump(comment_data, f)
 

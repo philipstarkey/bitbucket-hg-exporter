@@ -22,6 +22,8 @@
     <script src="ng/repo-list/repo-list.component.js"></script>
     <script src="ng/pullrequests-list/pullrequests-list.module.js"></script>
     <script src="ng/pullrequests-list/pullrequests-list.component.js"></script>
+    <script src="ng/pullrequest-details/pullrequest-details.module.js"></script>
+    <script src="ng/pullrequest-details/pullrequest-details.component.js"></script>
     
     <!-- Latest compiled and minified CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
@@ -35,6 +37,19 @@
     <!-- Custom CSS -->
     <style>
       .panel img {max-width: 100%;}
+      span.approved::after {
+        background-image: url(ng/icon-approved.svg);
+        background-size: 12px;
+        border: 2px solid #fff;
+        border-radius: 8px;
+        content: '';
+        height: 16px;
+        position: relative;
+        right: 12px;
+        top: -12px;
+        width: 16px;
+        display: inline-block;
+      }
     </style>
   </head>
   <body>

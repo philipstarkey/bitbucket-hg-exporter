@@ -24,7 +24,7 @@
                 <tbody>
                     <tr ng-repeat="pr in $ctrl.pullrequests.values | filter:$ctrl.query | orderBy:$ctrl.orderProp:$ctrl.reverseSort" >
                         <td>
-                            <a href="#!/{{$ctrl.project_slug}}/pull-request/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a>
+                            <a href="#!/{{$ctrl.project_slug}}/pull-requests/{{pr.id}}">#{{pr.id}}: {{pr.title}}</a>
                             <br />
                             <span class="badge" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 200px; font-size:11px;" uib-tooltip="{{pr.source.repository.full_name}}:{{pr.source.branch.name}}" tooltip-placement="bottom">{{pr.source.repository.full_name}}:{{pr.source.branch.name}}</span> &rarr; <span class="badge" style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; width: 100px; font-size:11px;" uib-tooltip="{{pr.destination.branch.name}}" tooltip-placement="bottom">{{pr.destination.branch.name}}</span>
                         </td>
