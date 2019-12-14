@@ -8,7 +8,7 @@
         <!--Body content-->
   
         <h1>Welcome to the archive of BitBucket data for the following repositories:</h1>
-        <p ng-repeat="(name, project) in $root.project_data"><a href="#!/{{name}}">{{name}}</a></p>
+        <p ng-repeat="(name, project) in $root.projects"><a href="#!/{{name}}"><span ng-show="project['is_fork']" class="label label-primary">Fork</span> {{name}}</a></p>
       </div>
     </div>
   </div>
