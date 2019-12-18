@@ -602,7 +602,7 @@ class MigrationProject(object):
 
                     # save github repo location (so we can link to changesets, files, etc)
                     if repository['full_name'] in self.__settings['github_existing_repositories']:
-                        data[repository['full_name']]['github_repo'] = self.__settings['github_existing_repositories'][repository['full_name']]
+                        data[repository['full_name']]['github_repo'] = self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url']
 
                     # load the top level JSON file for each project as we will use it more than once
                     data_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
@@ -623,7 +623,7 @@ class MigrationProject(object):
 
             # reprocess:
             #   * PR comments so they are in a useful order
-            print('Reordering pull request comments...')
+            print('Reordering comments...')
             for repository in self.__settings['bb_repositories_to_export']:
                 # open repo.json file, find location of pull requests list
                 pull_request_path = None
@@ -632,20 +632,38 @@ class MigrationProject(object):
                     pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
 
                 # open that file, iterate over each pull requests, and find links to comments
-                pull_request_comment_paths = []
+                comment_paths = []
                 while pull_request_path is not None:
                     with open(pull_request_path, 'r') as f:
                         pull_requests_data = json.load(f)
                         for pull_request in pull_requests_data['values']:
                             if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
-                                pull_request_comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
+                                comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
                         if "next" in pull_requests_data:
                             pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
                         else:
                             pull_request_path = None
 
+                # find location of commit list
+                if "links" in repo_data and "commits" in repo_data['links'] and 'href' in repo_data['links']['commits']:
+                    pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['commits']['href'].split('/'))
 
-                for pull_request_file in pull_request_comment_paths:
+                # open that file, iterate over each commit, and find links to comments
+                # TODO: rename variables
+                comment_paths = []
+                while pull_request_path is not None:
+                    with open(pull_request_path, 'r') as f:
+                        pull_requests_data = json.load(f)
+                        for pull_request in pull_requests_data['values']:
+                            if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
+                                comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
+                        if "next" in pull_requests_data:
+                            pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
+                        else:
+                            pull_request_path = None
+
+                # Note this code now handles both pull requests and commit comments (despite the variable names)
+                for pull_request_file in comment_paths:
                     comment_files = [pull_request_file]
                     comments = []
                     # Load all comments into RAM, then recursively iterate finding all the ones that have no parent, then all children of the top level, then children of that level, etc. etc. until all comments are placed into a hierarchy. 
@@ -869,7 +887,7 @@ class MigrationProject(object):
                 self.__settings['github_rewrite_additional_URLs'] = q.confirm('We will automatically rewrite any URLS in issues, pull-requests, etc that match any of the repositories you are migrating. Do you want to specify an additional list of URLs to rewrite?', default=self.__settings['github_rewrite_additional_URLs']).ask()
                 if self.__settings['github_rewrite_additional_URLs']:
                     # TODO: don't use getcwd if setting is already set
-                    self.__settings['github_URL_rewrite_file_path'] = q.text('Enter the path to a JSON file of the format {"<old BitBucket repo base URL>": "<new GitHub repo base URL>", ...}:', default=os.getcwd()).ask()
+                    self.__settings['github_URL_rewrite_file_path'] = q.text('Enter the path to a JSON file of the format {"<old BitBucket repo base URL>": ["<new BitBucket archive base URL>", "<new GitHub repo base URL>"], ...}:', default=os.getcwd()).ask()
 
             if self.__settings['backup_forks']:
                 self.__settings['github_import_forks'] = q.confirm('Import BitBucket repository forks to Github (this is purely for preservation and will not be listed as forks on GitHub nor will git identify the forks as related in anyway to your new master repository)?', default=self.__settings['github_import_forks']).ask()
@@ -1015,6 +1033,11 @@ class BitBucketExport(object):
 
         self.__save_path = os.path.join(options['project_path'], 'bitbucket_data_raw')
         self.__save_path_relative = os.path.join(options['project_path'], 'gh-pages', 'data')
+
+        self.__external_URL_rewrites = {}
+        if options['github_rewrite_additional_URLs']:
+            with open(options['github_URL_rewrite_file_path'], 'r') as f:
+                self.__external_URL_rewrites = json.load(f)
 
         self.__tree = []
         self.__current_tree_location = ()
@@ -1529,6 +1552,11 @@ class BitBucketExport(object):
                     # apply relevant BB to GH transformation
                     # find repo name
                     # apply all transformations 
+                    for name in mapping:
+                        data = data.replace('https://bitbucket.org/{}'.format(name), '#!/{}'.format(name))
+
+                    for old_url, (new_url, _) in self.__external_URL_rewrites:
+                        data = data.replace(old_url, new_url)
 
                     # save file
                     with open(new_path, 'w') as f:
