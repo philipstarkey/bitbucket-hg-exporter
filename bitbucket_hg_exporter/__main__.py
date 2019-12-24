@@ -336,34 +336,39 @@ class MigrationProject(object):
             # clone the Hg repos (including forks if specified)
             logs = {}
             for repository in self.__settings['bb_repositories_to_export']:
-                # TODO: clone forks too!
-                # TODO: clone wikis
                 # TODO: use password from mercurial_keyring (which I think means saving an additional keyring entry with
                 # name and username as <username>@@<repo_url>)
                 clone_dest = os.path.join(self.__settings['project_path'], 'hg-repos', *repository['full_name'].split('/'))
-                if not os.path.exists(os.path.join(clone_dest, '.hg', 'hgrc')):
-                    clone_url = None
-                    for clone_link in repository['links']['clone']:
-                        if clone_link['name'] == 'https':
-                            clone_url = clone_link['href']
-                            break
-                    if clone_url is None:
-                        print('Failed to determine clone URL for BitBucket repository {}'.format(repository['full_name']))
-                        sys.exit(0)
-                    p=subprocess.Popen(['hg', 'clone', clone_url, clone_dest])
-                    p.communicate()
-                    if p.returncode:
-                        print('Failed to hg clone {}'.format(clone_url))
-                        sys.exit(0)
-                else:
-                    p=subprocess.Popen(['hg', 'pull', '-R', clone_dest])
-                    p.communicate()
-                    if p.returncode:
-                        print('Failed to hg update (pull) from {}'.format(clone_url))
-                        sys.exit(0)
+                clone_url = None
+                for clone_link in repository['links']['clone']:
+                    if clone_link['name'] == 'https':
+                        clone_url = clone_link['href']
+                        break
+                if clone_url is None:
+                    print('Failed to determine clone URL for BitBucket repository {}'.format(repository['full_name']))
+                    sys.exit(0)
+                clone_dests = [(clone_dest, clone_url)]
+
+                # add path to wiki repository if it has one
+                if repository['has_wiki']:
+                    clone_dests.append((clone_dest+'-wiki', clone_url+'/wiki'))
+
+                for clone_dest, clone_url in clone_dests:
+                    if not os.path.exists(os.path.join(clone_dest, '.hg', 'hgrc')):
+                        p=subprocess.Popen(['hg', 'clone', clone_url, clone_dest])
+                        p.communicate()
+                        if p.returncode:
+                            print('Failed to hg clone {}'.format(clone_url))
+                            sys.exit(0)
+                    else:
+                        p=subprocess.Popen(['hg', 'pull', '-R', clone_dest])
+                        p.communicate()
+                        if p.returncode:
+                            print('Failed to hg update (pull) from {}'.format(clone_url))
+                            sys.exit(0)
 
                 # Generate mapping for rewriting changesets and other items
-                logs[repository['full_name']] = {'hg': hg2git.get_hg_log(clone_dest)}
+                logs[repository['full_name']] = {'hg': hg2git.get_hg_log(clone_dests[0][0])}
 
             github_auth = (self.__settings['master_github_username'], self.__get_password('github', self.__settings['master_github_username']))
             github_headers = {"Accept": "application/vnd.github.barred-rock-preview"}
