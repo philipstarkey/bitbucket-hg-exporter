@@ -9,6 +9,7 @@
 import argparse
 from collections import OrderedDict
 import copy
+import datetime
 import json
 import getpass
 import html
@@ -166,6 +167,7 @@ class MigrationProject(object):
             'github_user_mapping_path': '',
             'github_import_issues': True,
             'github_publish_pages': True,
+            'github_pages_repo_name': '',
             'github_rewrite_additional_URLs': True,
             'github_URL_rewrite_file_path': '',
             'github_import_forks': True,
@@ -745,6 +747,111 @@ class MigrationProject(object):
             # Upload issues to GitHub if requested (using rewritten URLs/changesets)
 
             # Upload the pages to GitHub
+            if self.__settings['github_publish_pages']:
+                print('Uploading the archive of BitBucket data to GitHub and activating GitHub pages')
+                clone_dest = os.path.join(self.__settings['project_path'], 'gh-pages')
+                clone_url = 'https://github.com/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name'])
+                if not os.path.exists(os.path.join(clone_dest, '.git', 'index')):
+                    # create repository
+                    p=subprocess.Popen(['git', 'init'], cwd=clone_dest)
+                    p.communicate()
+                    if p.returncode:
+                        print('Failed to run git init for gh-pages folder')
+                        sys.exit(0)
+
+                    # set remote
+                    p=subprocess.Popen(['git', 'remote', 'add', 'origin', clone_url], cwd=clone_dest)
+                    p.communicate()
+                    if p.returncode:
+                        print('Failed to run git init for gh-pages folder')
+                        sys.exit(0)
+                else:
+                    # pull latest version
+                    p=subprocess.Popen(['git', 'pull', clone_url], cwd=clone_dest)
+                    p.communicate()
+                    if p.returncode:
+                        print('WARNING: Failed to git update (pull) from {}'.format(clone_url))
+
+                # Stage all changes
+                p=subprocess.Popen(['git', 'add', '.'], cwd=clone_dest)
+                p.communicate()
+                if p.returncode:
+                    print('Failed to stage changes in gh-pages folder')
+                    sys.exit(0)
+
+                # commit all changes
+                p=subprocess.Popen(['git', 'commit', '-m', "Auto commit by bitbucket_hg_exporter at {}".format(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))], cwd=clone_dest)
+                p.communicate()
+                if p.returncode:
+                    print('Failed to commit changes in gh-pages folder')
+                    sys.exit(0)
+
+                # Make GitHub repo if needed
+                status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']), github_auth)
+                if status != 200:
+                    # find out if owner is a user or org
+                    is_org = False
+                    status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
+                    if status == 200:
+                        if response['type'] != "User":
+                            is_org = True
+
+                    repo_data = {
+                        "name": self.__settings['github_pages_repo_name'],
+                        "description": "Archive of repository data from BitBucket",
+                        "private": False,
+                        "has_wiki": False,
+                        "has_issues": False,
+                        "has_projects": False,
+                        'homepage': 'https://{owner}.github.io/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),
+                    }
+
+                    if is_org:
+                        response = requests.post(
+                            'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
+                            auth=github_auth, 
+                            json=repo_data
+                        )
+                    else:
+                        response = requests.post(
+                            'https://api.github.com/user/repos',  
+                            auth=github_auth, 
+                            json=repo_data
+                        )
+                    if response.status_code != 201:
+                        print('Failed to create empty repository {}/{} on GitHub (for the BitBucket archive). Response code was: {}'.format(self.__settings['github_owner'], self.__settings['github_pages_repo_name'], response.status_code))
+                        sys.exit(0)
+                    response = response.json()
+
+
+                # Push to GitHub
+                p=subprocess.Popen(['git', 'push', 'origin', 'master'], cwd=clone_dest)
+                p.communicate()
+                if p.returncode:
+                    print('Failed to push changes in gh-pages folder')
+                    sys.exit(0)
+
+                
+                # Configure for github pages
+                github_headers = {"Accept": 'application/vnd.github.switcheroo-preview+json'}
+                pages_data = {
+                    "source": {
+                        "branch": "master",
+                        "path": ""
+                    }
+                }
+                response = requests.post(
+                    'https://api.github.com/repos/{owner}/{repo}/pages'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),  
+                    auth=github_auth, 
+                    headers=github_headers,
+                    json=pages_data
+                )
+                # Only error on response codes that are not success or "already enabled"
+                if response.status_code != 201 and response.status_code != 409:
+                    print('Failed to enable GitHub pages on {}/{} (for the BitBucket archive). Response code was: {}'.format(self.__settings['github_owner'], self.__settings['github_pages_repo_name'], response.status_code))
+                    print(response.json())
+                    sys.exit(0)
+                print('done!')
 
             # Import wikis
 
@@ -891,6 +998,18 @@ class MigrationProject(object):
             self.__settings['github_import_issues'] = q.confirm('Import BitBucket issues to GitHub issues?', default=self.__settings['github_import_issues']).ask()
             # publish bitbucket backup?
             self.__settings['github_publish_pages'] = q.confirm('Publish BitBucket backup on GitHub pages (with links to current GitHub repository)?', default=self.__settings['github_publish_pages']).ask()
+            if self.__settings['github_publish_pages']:
+                while True:
+                    self.__settings['github_pages_repo_name'] = q.text('Enter the repository name where you would like to publish the backup:', default=self.__settings['github_pages_repo_name']).ask()
+                    if '/' in self.__settings['github_pages_repo_name']:
+                        print('ERROR: repository names cannot have "/" characters in them. Make sure you are specifying the name without the GitHub user/org')
+                    elif self.__settings['github_pages_repo_name'] is None:
+                        sys.exit(0)
+                    elif self.__settings['github_pages_repo_name'] == '':
+                        print('ERROR: You cannot specify an empty repository name')
+                    else:
+                        break
+            
             if self.__settings['github_import_issues'] or self.__settings['github_publish_pages']:
                 # rewrite other repository URLS
                 self.__settings['github_rewrite_additional_URLs'] = q.confirm('We will automatically rewrite any URLS in issues, pull-requests, etc that match any of the repositories you are migrating. Do you want to specify an additional list of URLs to rewrite?', default=self.__settings['github_rewrite_additional_URLs']).ask()
@@ -983,6 +1102,8 @@ class MigrationProject(object):
             print('        File containing mapping between BitBucket and GitHub users: {}'.format(str(self.__settings['github_user_mapping_path'])))
             print('        Import issues to GitHub issue tracker: {}'.format(str(self.__settings['github_import_issues'])))
             print('        Publish BitBucket backup on GitHub pages: {}'.format(str(self.__settings['github_publish_pages'])))
+            if self.__settings['github_publish_pages']:
+                print('            Repository name for backup: {}'.format(str(self.__settings['github_pages_repo_name'])))
             print('        Rewrite custom set of URLs in issues/comments/etc: {}'.format(str(self.__settings['github_rewrite_additional_URLs'])))
             if self.__settings['github_rewrite_additional_URLs']:
                 print('            Path containing URL rewrites: {}'.format(str(self.__settings['github_URL_rewrite_file_path'])))
