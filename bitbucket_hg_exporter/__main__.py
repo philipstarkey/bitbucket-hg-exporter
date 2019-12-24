@@ -489,6 +489,11 @@ class MigrationProject(object):
                 all_finished = True
                 for bitbucket_name, github_data in self.__settings['github_existing_repositories'].items():
                     if 'initial_import_response' not in github_data:
+                        # A hack to handle repos that already existed and were not imported
+                        # (we use this URL later when cloning the GitHub repo)
+                        github_data['import_status'] = {}
+                        github_data['import_status']['repository_url'] = 'https://api.github.com/repos/'+github_data['name']
+                        # Skip checking imprt status for repos we didn't import ourselves
                         continue
                     if 'import_status' not in github_data or github_data['import_status']['status'] != 'complete':
                         # get the current status
@@ -517,7 +522,7 @@ class MigrationProject(object):
                     if 'is_fork' in repository and repository['is_fork']:
                         continue
 
-                # get the ithub repository information
+                # get the github repository information
                 github_data = self.__settings['github_existing_repositories'][repository['full_name']]
                 response = requests.get(github_data['import_status']['repository_url'], auth=github_auth, headers=github_headers)
                 if response.status_code != 200:
@@ -863,26 +868,25 @@ class MigrationProject(object):
 
     def __get_github_import_options(self):
         choices = {
-            "I need to create new repositories on GitHub":0, 
-            "I already have repositories on GitHub for each of the repositories I previously selected":1,
+            "I need to create new repositories on GitHub for all previously selected BitBucket repositories":0, 
+            "I already have repositories on GitHub for some of the BitBucket repositories I previously selected":1,
             "I don't want to import to GitHub":2,
         }
         response = q.select("How should we work with GitHub?", choices=choices.keys()).ask()
         if choices[response] == 0 or choices[response] == 1:
             self.__settings['import_to_github'] = True
             self.__get_master_github_credentials()
-
+            
+            # Get team/user where the repositories should be created
+            self.__settings['github_owner'] = q.text('Enter the GitHub user or organisation that will own the new repositories?', default=self.__settings['github_owner']).ask()
             # Get list of GitHub repositories
             if choices[response] == 1:
                 # TODO: write this
                 while not self.__get_github_repositories():
                     pass
-            # Get team/user where the repositories should be created
-            else:
-                self.__settings['github_owner'] = q.text('Enter the GitHub user or organisation that will own the new repositories?', default=self.__settings['github_owner']).ask()
-                # TODO: don't use getcwd if setting is already set
-                self.__settings['github_user_mapping_path'] = q.text('Enter the path to a JSON file containing username mappings between BitBucket and GitHub:', default=os.getcwd()).ask()
 
+            # TODO: don't use getcwd if setting is already set
+            self.__settings['github_user_mapping_path'] = q.text('Enter the path to a JSON file containing username mappings between BitBucket and GitHub:', default=os.getcwd()).ask()
             # Import issues to GitHub issues?
             self.__settings['github_import_issues'] = q.confirm('Import BitBucket issues to GitHub issues?', default=self.__settings['github_import_issues']).ask()
             # publish bitbucket backup?
@@ -909,8 +913,50 @@ class MigrationProject(object):
             raise RuntimeError('Unknown option selected')
     
     def __get_github_repositories(self, forks=False):
-        pass
-        # TODO: write this to get a list of existing GitHub repositories
+        looping = True
+        # loop until user says "done"
+        while looping:
+            # list all selected BitBucket repositories in a choice (along with mapped GitHub repo)
+            choices = {}
+            for repository in self.__settings['bb_repositories_to_export']:
+                if 'is_fork' in repository and repository['is_fork']:
+                    continue
+                text = 'BitBucket/'+repository['full_name']
+                if repository['full_name'] in self.__settings['github_existing_repositories']:
+                    text += ' (mapping to GitHub/{})'.format(self.__settings['github_existing_repositories'][repository['full_name']]['name'])
+                choices[text] = repository['full_name']
+            response = q.select("Select the BitBucket repository you want to map to an existing GitHub repository:", choices=choices.keys()).ask()
+            repository_full_name = choices[response]
+            # Ask use to type in the path to the matching GitHub repo
+            existing_github_repo = ''
+            if repository_full_name in self.__settings['github_existing_repositories']:
+                existing_github_repo = self.__settings['github_existing_repositories'][repository_full_name]['name']
+            github_slug = q.text('Enter the existing GitHub repository for BitBucket repository {} in the format <user or org.>/<repo name>:'.format(response), default=existing_github_repo).ask()
+
+            # query githib for the repo details and save it
+            github_auth = (self.__settings['master_github_username'], self.__get_password('github', self.__settings['master_github_username']))
+            status, response = ghapi_json('repos/{repo}'.format(repo=github_slug), github_auth)
+            if status == 200:
+                self.__settings['github_existing_repositories'][repository_full_name] = {
+                    'name': github_slug,
+                    'repository': response,
+                    'import_started': True,
+                    'import_completed': True
+                }
+            else:
+                print('ERROR: Failed to query {}. Are you sure that repository exists and you have permission to access it?'.format(gh_endpoint_to_full_url('repos/{repo}'.format(repo=github_slug))))
+                print('')
+
+            # ask the user if they want to do more
+            choices = {
+                "Edit another mapping between BitBucket and GitHub repositories":0, 
+                "Continue with export":1,
+            }
+            response = q.select("What would you like to do?", choices=choices.keys()).ask()
+            if choices[response] == 1:
+                looping = False
+
+        return True
 
     def __print_project_settings(self):
         print('Project settings:')
@@ -942,8 +988,8 @@ class MigrationProject(object):
                 print('            Path containing URL rewrites: {}'.format(str(self.__settings['github_URL_rewrite_file_path'])))
             print('        Import BitBucket forks to GitHub: {}'.format(str(self.__settings['github_import_forks'])))
             print('        These repositories are already on GitHub (including imports initiated by this script in previous runs:)')
-            for _, repo in self.__settings['github_existing_repositories'].items(): 
-                print('            {}'.format(repo['name']))
+            for bitbucket_name, repo in self.__settings['github_existing_repositories'].items(): 
+                print('            BitBucket/{} -> GitHub/{}'.format(bitbucket_name, repo['name']))
 
         response = q.confirm('Is this correct?').ask()
         return response
