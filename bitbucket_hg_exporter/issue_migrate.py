@@ -9,25 +9,30 @@
 # New functions and changes copyright Philip Starkey 2020 and licensed under the GPLv3
 
 import json
-import re
 import os
+import re
+import time
+import urllib.parse
 
 import requests
+import questionary as q
 
 SEP = "-" * 40
 
 ISSUE_TEMPLATE = """\
 **Original report ([{issue_link_type} issue]({archive_url}/{repo}/issues/{id})) by {reporter}.**
-{attachments}{sep}
+{attachments}
+{sep}
 {content}
 """
 
-ATTACHMENTS_TEMPLATE = """\
+ATTACHMENTS_TEMPLATE = """
 The original report had attachments: {attach_names}
 """
 
 COMMENT_TEMPLATE = """\
 **Original comment by {author}.**
+
 {sep}
 {changes}{content}
 """
@@ -37,11 +42,9 @@ class Options(object):
 
 ####
 # THINGS TO FIX
-#
-#   * inline images in issues need their URL rewriting to point ot the gh-pages repo if it exists
-#   * user mentions are not rewritten properly because they use the UUID now
-#   * need to finish the code for user mappings (maybe that can include the UUID stuff too?)
+#   * user mentions are not rewritten properly because they use the UUID now and they use the old BB API to query name
 #   * need to check what happens to inter/intra repository links (how they are rewritten) in the raw markup
+#   * assignee requires the user be a collaborator, so is disabled for now
 #####
 
 def import_issues_to_github(bb_repo, gh_repo, gh_auth, settings, mapping, dry_run=True):
@@ -55,13 +58,18 @@ def import_issues_to_github(bb_repo, gh_repo, gh_auth, settings, mapping, dry_ru
 
     # check that there are no issues/pullrequests on GitHub for this repository. If there are,
     # we should abort as we can't yet handle this case!
+    offset = 0
     if not options.dry_run:
         response = requests.get('https://api.github.com/search/issues?q=repo:{}+sort:author-date-desc&sort=created&order=desc'.format(options.github_repo), auth=options.gh_auth)
         if response.status_code == 200:
             data = response.json()
             if len(data['items']) != 0:
-                print('WARNING: Skipping import of issues to GitHub {} as there are existing issues or pull requests in the repository.'.format(options.github_repo))
-                return False
+                cont = q.confirm('WARNING: The GitHub repo {} has existing issues or pull requests. If these are just issues imported from a previous run of this tool, answer "Y" to continue with the import from the point we left off. If they are new issues/pull requests, answer "N" to skip importing. Do you want to continue importing?'.format(options.github_repo)).ask()
+                # print('WARNING: Skipping import of issues to GitHub {} as there are existing issues or pull requests in the repository.'.format(options.github_repo))
+                if not cont:
+                    return False
+                else:
+                    offset = len(data['items'])
         else:
             print('WARNING: Skipping import of issues to GitHub {} as we could not query the current list of issues.'.format(options.github_repo))
             return False
@@ -80,6 +88,9 @@ def import_issues_to_github(bb_repo, gh_repo, gh_auth, settings, mapping, dry_ru
     issues_iterator = fill_gaps(get_issues(options))
 
     for index, issue in enumerate(issues_iterator):
+        # skip issues already imported
+        if issue['id'] <= offset:
+            continue
         if isinstance(issue, DummyIssue):
             comments = []
             changes = {}
@@ -221,7 +232,8 @@ def convert_issue(issue, comments, changes, options, attachments, gh_milestones)
 
     # Assign issue if we have a mapping between BitBucket and GitHub users for the relevant user
     if issue['assignee'] and issue['assignee']['nickname'] in options.settings['bb_gh_user_mapping']:
-        out['assignee'] = options.settings['bb_gh_user_mapping'][issue['assignee']['nickname']]
+        # out['assignee'] = options.settings['bb_gh_user_mapping'][issue['assignee']['nickname']]
+        pass
 
     if is_closed:
         closed_status = [
@@ -287,7 +299,7 @@ def format_user(user, options):
 
 def format_issue_body(issue, attachments, options):
     content = issue['content']['raw']
-    content = apply_conversion(content, options)
+    content = apply_conversion(content, options, issue['id'])
 
     if options.settings['github_publish_pages']:
         # repo URL (for attachment links)
@@ -321,7 +333,7 @@ def format_comment_body(comment, changes, options):
     content = comment['content']['raw']
     if content is None:
         content = ""
-    content = apply_conversion(content, options)
+    content = apply_conversion(content, options, comment['issue']['id'])
     author = comment['user']
 
     change_str = "".join(
@@ -341,14 +353,24 @@ def format_comment_body(comment, changes, options):
     )
     return COMMENT_TEMPLATE.format(**data)
 
-def apply_conversion(content, options):
+image_regex = re.compile(r'\!\[\]\((.*?)\)', re.MULTILINE)
+def apply_conversion(content, options, issue_id):
     # TODO: Replace this with the better version in hg2git.py and also run a cut down version of URL/hash replaces for other repositories that
     # are part of this project
     content = options.mapping[options.bitbucket_repo].convert_all(content)
-    # content = convert_changesets(content, options)
-    # content = convert_creole_braces(content)
-    # content = convert_links(content, options)
-    # content = convert_users(content, options)
+
+    image_paths = image_regex.findall(content)
+    if options.settings['github_publish_pages']:
+        archive_url = 'https://{owner}.github.io/{repo}'.format(owner=options.settings['github_owner'], repo=options.settings['github_pages_repo_name'])
+        for match in image_paths:
+            if os.path.exists(os.path.join(options.settings['project_path'], 'gh-pages', *match.split('/'))):
+                content = content.replace('![]({})'.format(match), '![]({archive_url}/{match})'.format(match=urllib.parse.quote(match), archive_url=archive_url))
+    elif image_paths:
+        for match in image_paths:
+            if os.path.exists(os.path.join(options.settings['project_path'], 'gh-pages', *match.split('/'))):
+                content = content.replace('![]({})'.format(match), '![](https://{match})'.format(match=urllib.parse.quote(match[5:])))
+        print('Warning: {repo} issue #{id} contains one or more images that are stored on BitBucket. They may not survive when BitBucket deletes your repository. You will need to manually fix this or configure this tool to publish an archive of your repository data on GitHub pages.'.format(id=issue_id, repo=options.bitbucket_repo))
+
     return content
 
 def format_change_element(change_type, change, options):

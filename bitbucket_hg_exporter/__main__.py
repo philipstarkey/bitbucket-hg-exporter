@@ -291,6 +291,21 @@ class MigrationProject(object):
         response = q.select("What would you like to do?", choices=choices.keys()).ask()
         if choices[response] == 0:
             
+            # load the user mapping
+            if self.__settings['github_user_mapping_path']:
+                while True:
+                    try:
+                        with open(self.__settings['github_user_mapping_path'], 'r') as f:
+                            data = json.load(f)
+                            if not isinstance(data, dict):
+                                raise RuntimeError('')
+                            self.__settings['bb_gh_user_mapping'] = data
+                            break
+                    except BaseException:
+                        try_again = q.confirm('Could not load bitbucket to github user mapping file. Check it is a JSON dictionary containing bitbucket:github user key pairs. Would you like to try loading it again?').ask()
+                        if not try_again:
+                            break
+
             owner = self.__settings['bitbucket_repo_owner']
             auth = (self.__settings['master_bitbucket_username'], self.__get_password('bitbucket', self.__settings['master_bitbucket_username']))
 
