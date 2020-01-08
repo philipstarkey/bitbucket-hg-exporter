@@ -79,6 +79,11 @@ class BbToGh(object):
     * Convert BB changeset links into GH.
     * Convert BB issue links into GH.
     * Convert BB src links into GH.
+
+    TODO:
+    * Convert markup-less commit hashes to gh-hash
+    * use user mappings
+    * add a shorter version of convert_all which rewrites relevant repo data in content from *other* repos
     """
 
     def __init__(self, hg_logs, git_logs, bb_url, gh_url):

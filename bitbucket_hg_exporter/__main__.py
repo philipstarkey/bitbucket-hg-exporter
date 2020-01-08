@@ -28,6 +28,7 @@ from OpenSSL.SSL import SysCallError
 from distutils.dir_util import copy_tree
 
 from . import hg2git
+from .issue_migrate import import_issues_to_github
 
 bitbucket_api_url = 'https://api.bitbucket.org/2.0/'
 github_api_url = 'https://api.github.com/'
@@ -165,6 +166,7 @@ class MigrationProject(object):
             'master_github_username': '',
             'github_owner': '',
             'github_user_mapping_path': '',
+            'bb_gh_user_mapping': {},
             'github_import_issues': True,
             'github_publish_pages': True,
             'github_pages_repo_name': '',
@@ -172,6 +174,9 @@ class MigrationProject(object):
             'github_URL_rewrite_file_path': '',
             'github_import_forks': True,
             'github_existing_repositories': {},
+
+            # 'github_import_complete': False,
+            'github_issue_import_complete': False,
         }
 
         p = argparse.ArgumentParser()
@@ -376,195 +381,194 @@ class MigrationProject(object):
             github_headers = {"Accept": "application/vnd.github.barred-rock-preview"}
 
             # If needed, import all repositories to GitHub
-            #   Note: Once this is done, we should swap the settings to contains a list of existing repos so that everything works for subsequent runs
-            #
-            # TODO: Only do this if we are exporting to GitHub
-            def find_fork_parent(repo):
-                if 'is_fork' in repo and repo['is_fork']:
-                    if 'parent' in repo and 'full_name' in repo['parent']:
-                        parent_name = repo['parent']['full_name']
-                        for r in self.__settings['bb_repositories_to_export']:
-                            if r['full_name'] == parent_name:
-                                return find_fork_parent(r)
-                        return None
-                    else:
-                        return None
-                else:
-                    return repo
-            for repository in self.__settings['bb_repositories_to_export']:
-                # skip forks if we are not importing them to github
-                if not self.__settings['github_import_forks']:
-                    if 'is_fork' in repository and repository['is_fork']:
-                        continue
-
-                if repository['full_name'] not in self.__settings['github_existing_repositories'] or not self.__settings['github_existing_repositories'][repository['full_name']]['import_started']:
-                    clone_url = None
-                    for clone_link in repository['links']['clone']:
-                        if clone_link['name'] == 'https':
-                            clone_url = clone_link['href']
-                            break
-                    if clone_url is None:
-                        print('Failed to determine clone URL for BitBucket repository {}'.format(repository['full_name']))
-                        sys.exit(0)
-
-                    fork_parent = find_fork_parent(repository)
-                    github_slug = fork_parent['slug'] if fork_parent is not None else repository['slug']
-                    if 'is_fork' in repository and repository['is_fork']:
-                        github_slug += '-fork--'+repository['full_name'].replace('/', '-')
-                        if 'parent' in repository and 'full_name' in repository['parent']:
-                            github_slug += '--forked-from--'+repository['parent']['full_name'].replace('/', '-')
-
-
-                    # Need to create the repository first! This should allow us to make it private! Yay!
-                    # check if repository already exists
-                    if repository['full_name'] not in self.__settings['github_existing_repositories']:
-                        status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=github_slug), github_auth)
-                        if status != 200:
-                            # find out if owner is a user or org
-                            is_org = False
-                            status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
-                            if status == 200:
-                                if response['type'] != "User":
-                                    is_org = True
-
-                            repo_data = {
-                                "name": github_slug,
-                                "description": repository['description'],
-                                "private": repository['is_private'],
-                                "has_wiki": repository['has_wiki'],
-                                "has_issues": repository['has_issues'],
-                                "has_projects": True
-                            }
-                            if repository['website']:
-                                repo_data['homepage'] = repository['website']
-                            if is_org:
-                                response = requests.post(
-                                    'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
-                                    auth=github_auth, 
-                                    json=repo_data
-                                )
-                            else:
-                                response = requests.post(
-                                    'https://api.github.com/user/repos',  
-                                    auth=github_auth, 
-                                    json=repo_data
-                                )
-                            if response.status_code != 201:
-                                print('Failed to create empty repository {}/{} on GitHub. Response code was: {}'.format(self.__settings['github_owner'], github_slug, response.status_code))
-                                sys.exit(0)
-                            response = response.json()
-
-                        # This either uses the initial query of the repository before the if statement, or the response from the creation of the repository
-                        self.__settings['github_existing_repositories'][repository['full_name']] = {
-                            'name': '{owner}/{repo_name}'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
-                            'repository': response,
-                            'import_started': False,
-                            'import_completed': False
-                        }
-                        self.__save_project_settings()
-
-                    # generate import request to GitHub
-                    # TODO: Make this work for private repositories
-                    #       Need to confirm with user that they are happy for their BitBucket credentials to be given to GitHub
-                    params = {
-                        "vcs": "mercurial",
-                        "vcs_url": clone_url,
-                        # "vcs_username": "octocat",
-                        # "vcs_password": "secret"
-                    }
-                    response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
-                    if response.status_code != 201:
-                        print('Failed to import BitBucket repository {} to GitHub. Response code was: {}'.format(repository['full_name'], response.status_code))
-                        sys.exit(0)
-                    self.__settings['github_existing_repositories'][repository['full_name']].update({
-                        'initial_import_response': response.json(),
-                        'import_url': 'https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
-                        'import_started': True,
-                    })
-                    self.__save_project_settings()
-                    # enable LFS
-                    response = requests.patch('https://api.github.com/repos/{owner}/{repo_name}/import/lfs'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json={"use_lfs": "opt_in"})
-
-            # wait for all imports to complete
-            all_finished = False
-            while not all_finished:
-                all_finished = True
-                for bitbucket_name, github_data in self.__settings['github_existing_repositories'].items():
-                    if 'initial_import_response' not in github_data:
-                        # A hack to handle repos that already existed and were not imported
-                        # (we use this URL later when cloning the GitHub repo)
-                        github_data['import_status'] = {}
-                        github_data['import_status']['repository_url'] = 'https://api.github.com/repos/'+github_data['name']
-                        # Skip checking imprt status for repos we didn't import ourselves
-                        continue
-                    if 'import_status' not in github_data or github_data['import_status']['status'] != 'complete':
-                        # get the current status
-                        response = requests.get(github_data['import_url'], auth=github_auth, headers=github_headers)
-                        if response.status_code != 200:
-                            all_finished = False
-                            print('Failed to check status of import to {}. Will try again next loop.'.format(github_data['name']))
-                            continue
-                        github_data['import_status'] = response.json()
-                        if github_data['import_status']['status'] != 'complete':
-                            print('Waiting on {} to complete. Current status is: {}'.format(github_data['name'],github_data['import_status']['status_text']))
-                            all_finished = False
+            if self.__settings['import_to_github']:
+                def find_fork_parent(repo):
+                    if 'is_fork' in repo and repo['is_fork']:
+                        if 'parent' in repo and 'full_name' in repo['parent']:
+                            parent_name = repo['parent']['full_name']
+                            for r in self.__settings['bb_repositories_to_export']:
+                                if r['full_name'] == parent_name:
+                                    return find_fork_parent(r)
+                            return None
                         else:
-                            github_data['import_completed'] = True
+                            return None
+                    else:
+                        return repo
+                for repository in self.__settings['bb_repositories_to_export']:
+                    # skip forks if we are not importing them to github
+                    if not self.__settings['github_import_forks']:
+                        if 'is_fork' in repository and repository['is_fork']:
+                            continue
+
+                    if repository['full_name'] not in self.__settings['github_existing_repositories'] or not self.__settings['github_existing_repositories'][repository['full_name']]['import_started']:
+                        clone_url = None
+                        for clone_link in repository['links']['clone']:
+                            if clone_link['name'] == 'https':
+                                clone_url = clone_link['href']
+                                break
+                        if clone_url is None:
+                            print('Failed to determine clone URL for BitBucket repository {}'.format(repository['full_name']))
+                            sys.exit(0)
+
+                        fork_parent = find_fork_parent(repository)
+                        github_slug = fork_parent['slug'] if fork_parent is not None else repository['slug']
+                        if 'is_fork' in repository and repository['is_fork']:
+                            github_slug += '-fork--'+repository['full_name'].replace('/', '-')
+                            if 'parent' in repository and 'full_name' in repository['parent']:
+                                github_slug += '--forked-from--'+repository['parent']['full_name'].replace('/', '-')
+
+
+                        # Need to create the repository first! This should allow us to make it private! Yay!
+                        # check if repository already exists
+                        if repository['full_name'] not in self.__settings['github_existing_repositories']:
+                            status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=github_slug), github_auth)
+                            if status != 200:
+                                # find out if owner is a user or org
+                                is_org = False
+                                status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
+                                if status == 200:
+                                    if response['type'] != "User":
+                                        is_org = True
+
+                                repo_data = {
+                                    "name": github_slug,
+                                    "description": repository['description'],
+                                    "private": repository['is_private'],
+                                    "has_wiki": repository['has_wiki'],
+                                    "has_issues": repository['has_issues'],
+                                    "has_projects": True
+                                }
+                                if repository['website']:
+                                    repo_data['homepage'] = repository['website']
+                                if is_org:
+                                    response = requests.post(
+                                        'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
+                                        auth=github_auth, 
+                                        json=repo_data
+                                    )
+                                else:
+                                    response = requests.post(
+                                        'https://api.github.com/user/repos',  
+                                        auth=github_auth, 
+                                        json=repo_data
+                                    )
+                                if response.status_code != 201:
+                                    print('Failed to create empty repository {}/{} on GitHub. Response code was: {}'.format(self.__settings['github_owner'], github_slug, response.status_code))
+                                    sys.exit(0)
+                                response = response.json()
+
+                            # This either uses the initial query of the repository before the if statement, or the response from the creation of the repository
+                            self.__settings['github_existing_repositories'][repository['full_name']] = {
+                                'name': '{owner}/{repo_name}'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
+                                'repository': response,
+                                'import_started': False,
+                                'import_completed': False
+                            }
+                            self.__save_project_settings()
+
+                        # generate import request to GitHub
+                        # TODO: Make this work for private repositories
+                        #       Need to confirm with user that they are happy for their BitBucket credentials to be given to GitHub
+                        params = {
+                            "vcs": "mercurial",
+                            "vcs_url": clone_url,
+                            # "vcs_username": "octocat",
+                            # "vcs_password": "secret"
+                        }
+                        response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
+                        if response.status_code != 201:
+                            print('Failed to import BitBucket repository {} to GitHub. Response code was: {}'.format(repository['full_name'], response.status_code))
+                            sys.exit(0)
+                        self.__settings['github_existing_repositories'][repository['full_name']].update({
+                            'initial_import_response': response.json(),
+                            'import_url': 'https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
+                            'import_started': True,
+                        })
                         self.__save_project_settings()
-                if not all_finished:
-                    print('sleeping for 30 seconds...')
-                    time.sleep(30)
+                        # enable LFS
+                        response = requests.patch('https://api.github.com/repos/{owner}/{repo_name}/import/lfs'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json={"use_lfs": "opt_in"})
 
-            # TODO: send user mappings
+                # wait for all imports to complete
+                all_finished = False
+                while not all_finished:
+                    all_finished = True
+                    for bitbucket_name, github_data in self.__settings['github_existing_repositories'].items():
+                        if 'initial_import_response' not in github_data:
+                            # A hack to handle repos that already existed and were not imported
+                            # (we use this URL later when cloning the GitHub repo)
+                            github_data['import_status'] = {}
+                            github_data['import_status']['repository_url'] = 'https://api.github.com/repos/'+github_data['name']
+                            # Skip checking imprt status for repos we didn't import ourselves
+                            continue
+                        if 'import_status' not in github_data or github_data['import_status']['status'] != 'complete':
+                            # get the current status
+                            response = requests.get(github_data['import_url'], auth=github_auth, headers=github_headers)
+                            if response.status_code != 200:
+                                all_finished = False
+                                print('Failed to check status of import to {}. Will try again next loop.'.format(github_data['name']))
+                                continue
+                            github_data['import_status'] = response.json()
+                            if github_data['import_status']['status'] != 'complete':
+                                print('Waiting on {} to complete. Current status is: {}'.format(github_data['name'],github_data['import_status']['status_text']))
+                                all_finished = False
+                            else:
+                                github_data['import_completed'] = True
+                            self.__save_project_settings()
+                    if not all_finished:
+                        print('sleeping for 30 seconds...')
+                        time.sleep(30)
 
-            # clone the Github repos if needed
-            for repository in self.__settings['bb_repositories_to_export']:
-                # skip forks if we are not importing them to github
-                if not self.__settings['github_import_forks']:
-                    if 'is_fork' in repository and repository['is_fork']:
-                        continue
+                # TODO: send user mappings
 
-                # get the github repository information
-                github_data = self.__settings['github_existing_repositories'][repository['full_name']]
-                response = requests.get(github_data['import_status']['repository_url'], auth=github_auth, headers=github_headers)
-                if response.status_code != 200:
-                    print('Failed to get GitHub repository information for {}'.format(github_data['name']))
-                    sys.exit(0)
-                github_data['repository'] = response.json()
-                self.__save_project_settings()
+                # clone the Github repos if needed
+                for repository in self.__settings['bb_repositories_to_export']:
+                    # skip forks if we are not importing them to github
+                    if not self.__settings['github_import_forks']:
+                        if 'is_fork' in repository and repository['is_fork']:
+                            continue
 
-                # TODO: clone forks too!
-                # TODO: use password from github keyring?
-                clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
-                clone_url =  github_data['repository']['clone_url']
-                if not os.path.exists(os.path.join(clone_dest, '.git', 'index')):
-                    p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
-                    p.communicate()
-                    if p.returncode:
-                        print('Failed to git clone {}'.format(clone_url))
+                    # get the github repository information
+                    github_data = self.__settings['github_existing_repositories'][repository['full_name']]
+                    response = requests.get(github_data['import_status']['repository_url'], auth=github_auth, headers=github_headers)
+                    if response.status_code != 200:
+                        print('Failed to get GitHub repository information for {}'.format(github_data['name']))
                         sys.exit(0)
-                else:
-                    p=subprocess.Popen(['git', 'pull', clone_url], cwd=clone_dest)
-                    p.communicate()
-                    if p.returncode:
-                        print('Failed to git update (pull) from {}'.format(clone_url))
-                        sys.exit(0)
+                    github_data['repository'] = response.json()
+                    self.__save_project_settings()
+
+                    # TODO: clone forks too!
+                    # TODO: use password from github keyring?
+                    clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
+                    clone_url =  github_data['repository']['clone_url']
+                    if not os.path.exists(os.path.join(clone_dest, '.git', 'index')):
+                        p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
+                        p.communicate()
+                        if p.returncode:
+                            print('Failed to git clone {}'.format(clone_url))
+                            sys.exit(0)
+                    else:
+                        p=subprocess.Popen(['git', 'pull', clone_url], cwd=clone_dest)
+                        p.communicate()
+                        if p.returncode:
+                            print('Failed to git update (pull) from {}'.format(clone_url))
+                            sys.exit(0)
 
 
-                # Generate mapping for rewriting changesets and other items
-                logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
+                    # Generate mapping for rewriting changesets and other items
+                    logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
 
             mapping = {}
-            # Generate the git repo logs
-            for repository in self.__settings['bb_repositories_to_export']:
-                # skip forks if we are not importing them to github
-                if not self.__settings['github_import_forks']:
-                    if 'is_fork' in repository and repository['is_fork']:
-                        continue
+            if self.__settings['import_to_github']:
+                # Generate the git repo logs
+                for repository in self.__settings['bb_repositories_to_export']:
+                    # skip forks if we are not importing them to github
+                    if not self.__settings['github_import_forks']:
+                        if 'is_fork' in repository and repository['is_fork']:
+                            continue
 
-                # create the mapping
-                # TODO: add the correct URLS as arguments to BbToGh()
-                mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], '', '')
+                    # create the mapping
+                    # TODO: add the correct URLS as arguments to BbToGh()
+                    mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], repository['links']['html']['href'], self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url'])
 
             
 
@@ -726,28 +730,53 @@ class MigrationProject(object):
                         with open(pull_request_file, 'w') as f:
                             json.dump(comment_data, f)
             print('done!')
+
             # Write out the mapping between mercurial and gitub hashes
-            print('Linking git and mercurial hashes...')
-            for repository in self.__settings['bb_repositories_to_export']:
-                # skip forks if we are not importing them to github
-                if not self.__settings['github_import_forks']:
-                    if 'is_fork' in repository and repository['is_fork']:
-                        continue
-                repo_api_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
-                for filename in os.listdir(os.path.join(repo_api_path, 'commit')):
-                    if filename.endswith('.json'):
-                        with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
-                            data = json.load(f)
-                        with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
-                            data['git_hash'] = mapping[repository['full_name']].hgnode_to_githash(data['hash'])
-                            json.dump(data, f)
-                            if data['git_hash'] is None:
-                                print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
-            print('done!')
+            if self.__settings['import_to_github']:
+                print('Linking git and mercurial hashes...')
+                for repository in self.__settings['bb_repositories_to_export']:
+                    # skip forks if we are not importing them to github
+                    if not self.__settings['github_import_forks']:
+                        if 'is_fork' in repository and repository['is_fork']:
+                            continue
+                    repo_api_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
+                    for filename in os.listdir(os.path.join(repo_api_path, 'commit')):
+                        if filename.endswith('.json'):
+                            with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
+                                data = json.load(f)
+                            with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
+                                data['git_hash'] = mapping[repository['full_name']].hgnode_to_githash(data['hash'])
+                                json.dump(data, f)
+                                if data['git_hash'] is None:
+                                    print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
+                print('done!')
+
             # Upload issues to GitHub if requested (using rewritten URLs/changesets)
+            # URL to get last existing issue number: https://api.github.com/search/issues?q=repo:philipstarkey/qtutils+sort:author-date-desc&sort=created&order=desc
+            if self.__settings['import_to_github'] and not self.__settings['github_issue_import_complete']:
+                print('Performing dry run of GitHub issue import')
+                for repository in self.__settings['bb_repositories_to_export']: 
+                    bb_repo = repository['full_name']
+                    gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
+                    import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=True)
+                print('done! (you can see the results in the "temp/<owner>/<repo>" folder in the project directory)')
+
+                do_import = q.confirm('Do you want to proceed with the import of issues to GitHub (this can only be attempted once)?', default=False).ask()
+
+                if do_import:
+                    for repository in self.__settings['bb_repositories_to_export']: 
+                        bb_repo = repository['full_name']
+                        gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
+                        print('Importing issues from BitBucket/{} to GitHub/{}'.format(bb_repo, gh_repo))
+                        import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=False)
+                    print('done!')
+
+                    self.__settings['github_issue_import_complete'] = True
+                    self.__save_project_settings()
+
 
             # Upload the pages to GitHub
-            if self.__settings['github_publish_pages']:
+            if self.__settings['import_to_github'] and self.__settings['github_publish_pages']:
                 print('Uploading the archive of BitBucket data to GitHub and activating GitHub pages')
                 clone_dest = os.path.join(self.__settings['project_path'], 'gh-pages')
                 clone_url = 'https://github.com/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name'])
