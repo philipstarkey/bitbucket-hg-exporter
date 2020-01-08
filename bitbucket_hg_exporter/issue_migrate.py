@@ -42,7 +42,6 @@ class Options(object):
 
 ####
 # THINGS TO FIX
-#   * user mentions are not rewritten properly because they use the UUID now and they use the old BB API to query name
 #   * need to check what happens to inter/intra repository links (how they are rewritten) in the raw markup
 #   * assignee requires the user be a collaborator, so is disabled for now
 #####
@@ -64,7 +63,7 @@ def import_issues_to_github(bb_repo, gh_repo, gh_auth, settings, mapping, dry_ru
         if response.status_code == 200:
             data = response.json()
             if len(data['items']) != 0:
-                cont = q.confirm('WARNING: The GitHub repo {} has existing issues or pull requests. If these are just issues imported from a previous run of this tool, answer "Y" to continue with the import from the point we left off. If they are new issues/pull requests, answer "N" to skip importing. Do you want to continue importing?'.format(options.github_repo)).ask()
+                cont = q.confirm('WARNING: The GitHub repo {} has existing issues or pull requests. If these are just issues imported from a previous run of this tool, answer "Y" to continue with the import from the point we left off. If they are new issues/pull requests, answer "N" to skip importing. Do you want to continue importing?'.format(options.github_repo), default=False).ask()
                 # print('WARNING: Skipping import of issues to GitHub {} as there are existing issues or pull requests in the repository.'.format(options.github_repo))
                 if not cont:
                     return False

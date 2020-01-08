@@ -583,7 +583,9 @@ class MigrationProject(object):
 
                     # create the mapping
                     # TODO: add the correct URLS as arguments to BbToGh()
-                    mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], repository['links']['html']['href'], self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url'])
+                    archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name'])
+                    archive_url += '#!/'+repository['full_name']
+                    mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], repository['links']['html']['href'], self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url'], self.__settings['bb_gh_user_mapping'], archive_url=archive_url)
 
             
 

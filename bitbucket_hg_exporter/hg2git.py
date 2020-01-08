@@ -53,7 +53,7 @@ class memoize(object):
 
 # TODO: Fix this or repace it
 @memoize()
-def get_bb_username(user):
+def get_bb_username(user, try_with_braces=False):
     # fmt: off
     if user in ('name', 'names', 'class', 'import', 'property', 'ubuntu', 'wrap',
                 'github', 'for', 'enumerate', 'item', 'itemize', 'type', 'title',
@@ -61,13 +61,16 @@ def get_bb_username(user):
         #logging.info('user @%s is skipped. It\'s a some code.', user)
         return False
     # fmt: on
-    base_user_api_url = "https://bitbucket.org/api/1.0/users/"
+    if try_with_braces:
+        user = '{'+user+'}'
+    base_user_api_url = "https://bitbucket.org/api/2.0/users/"
     res = requests.get(base_user_api_url + user)
-    if res.status_code == 200:
+    if res.status_code == 200 or res.status_code == 304:
         #logging.debug("user @%s is exist in BB.", user)
-        return res.json()["user"]["display_name"]
-    else:
+        return res.json()
         #logging.debug("user @%s is not found in BB.", user)
+        if not try_with_braces:
+            return get_bb_username(user, try_with_braces=True)
         return None
 
 
@@ -86,12 +89,14 @@ class BbToGh(object):
     * add a shorter version of convert_all which rewrites relevant repo data in content from *other* repos
     """
 
-    def __init__(self, hg_logs, git_logs, bb_url, gh_url):
+    def __init__(self, hg_logs, git_logs, bb_url, gh_url, user_mapping, archive_url=None):
         self.bb_url = bb_url.rstrip("/")
         self.gh_url = gh_url.rstrip("/")
         self.hg_to_git = {}
         self.hg_dates = {}
         self.hg_revnum_to_hg_node = {}
+        self.user_mapping = user_mapping
+        self.archive_url = archive_url.rstrip("/")
         key_to_hg = {}
 
         for hg_log in hg_logs:
@@ -206,11 +211,21 @@ class BbToGh(object):
         before: 'pull request #123'
         after: self.bb_url + '/pull-request/123'
         """
-        captures = re.findall(r"\b(pull request #(\d+))\b", content)
-        for replacer, pr_number in captures:
-            content = content.replace(
-                replacer, "%s/pull-request/%s" % (self.bb_url, pr_number)
-            )
+        regex_strs = [
+            r"\b(pull request #(\d+))\b",
+            r"\b(PR #(\d+))\b",
+        ]
+        for regex_str in regex_strs:
+            captures = re.findall(regex_str, content)
+            for replacer, pr_number in captures:
+                if self.archive_url is not None:
+                    content = content.replace(
+                        replacer, "%s/pull-requests/%s" % (self.archive_url, pr_number)
+                    )
+                else:
+                    content = content.replace(
+                        replacer, "%s/pull-requests/%s" % (self.bb_url, pr_number)
+                    )
         return content
 
     def convert_bb_src_link(self, content):
@@ -239,30 +254,38 @@ class BbToGh(object):
         before: bb_url + '/issue/63/issue-title-string'
         after: '#63'
         """
-        base_url = self.bb_url + "/issue/"
-        issue_pairs = re.findall(base_url + r"(\d+)(/[\w\d.,_-]*)?", content)
-        for issue_id, rest_of_url in issue_pairs:
-            from_ = base_url + issue_id + rest_of_url
-            to_ = "#%s" % issue_id
-            content = content.replace(from_, to_)
-            #logging.info("%s -> %s", from_, to_)
+        base_urls = [
+            self.bb_url + "/issue/",
+            self.bb_url + "/issues/"
+        ]
+        for base_url in base_urls:
+            issue_pairs = re.findall(base_url + r"(\d+)(/[\w\d.,_-]*)?", content)
+            for issue_id, rest_of_url in issue_pairs:
+                from_ = base_url + issue_id + rest_of_url
+                to_ = "#%s" % issue_id
+                content = content.replace(from_, to_)
+                #logging.info("%s -> %s", from_, to_)
         return content
 
     def convert_bb_user_link(self, content):
         # TODO: make this more robust as the get_bb_username has special cases in it
         r"""
-        before: '@username'
-        after: '[@username](https://bitbucket.org/username)'
+        before: @{UUID} or @{account-id}
+        after: '[@username](profile_url)' or @github-username
         """
         # base_url = self.bb_url
         base_url = "https://bitbucket.org/"
-        pattern = r"(^|[^a-zA-Z0-9])@([a-zA-Z][a-zA-Z0-9_-]+)\b"
-        for prefix, user in re.findall(pattern, content):
-            name = get_bb_username(user)
-            if name is not None:
-                content = re.sub(
-                    pattern, r"\1[%s](%s)" % (name, base_url + user), content
-                )
+        #(^|[\n ^a-zA-Z0-9])@([\{a-zA-Z])([a-zA-Z0-9\:\}_\-\}]+)
+        # pattern = r"(^|[^a-zA-Z0-9])@([a-zA-Z][a-zA-Z0-9_-]+)\b"
+        pattern = r"\@\{(.*?)\}"
+        for user_id in re.findall(pattern, content):
+            user = get_bb_username(user_id)
+            if user is not None:
+                if user['nickname'] in self.user_mapping:
+                    name = self.user_mapping[user['nickname']]
+                    content = content.replace("@{"+user_id+"}", "@"+name)
+                else:
+                    content = content.replace("@{"+user_id+"}", "[{display_name} ({nickname})]({links[html][href]})".format(**user))
         return content
 
 
