@@ -94,7 +94,7 @@ class BbToGh(object):
         self.hg_dates = {}
         self.hg_revnum_to_hg_node = {}
         self.user_mapping = user_mapping
-        self.archive_url = archive_url.rstrip("/")
+        self.archive_url = archive_url.rstrip("/") if archive_url is not None else None
         key_to_hg = {}
 
         for hg_log in hg_logs:
@@ -215,8 +215,6 @@ class BbToGh(object):
             content = content.replace(self.bb_url, self.archive_url)
         return content
 
-    # TODO: I don't like the use of str.replace here as it could catch cases we are trying to ignore.
-    #       Should be able to replace it with re.sub()
     def convert_bb_cset_link(self, content, git_repo_prefix=False):
         r"""
         before: bb_url + '/commits/e282b3a8ef4802da3a685f10b5e9a39633e2c23a'
@@ -234,36 +232,67 @@ class BbToGh(object):
                 if it is a []() formatted URL:
                     replace the URL with a github cset link but do not modify the text
         """
-        base_url = self.bb_url + "/commits/"
-        url_pairs = re.findall(r"(\]\()?" + re.escape(base_url) + r"([0-9a-f]+)(/?)", content)
-        for formatted_url, hg_node, rest_of_url in url_pairs:
+        
+        def repl(matchobj):
+            first = matchobj.group(1)
+            url = matchobj.group(2)
+            hg_node = matchobj.group(3)
+            rest_of_url = matchobj.group(4)
+            last = matchobj.group(5)
+
+            # make sure none of them are None
+            first = '' if first is None else first
+            url = '' if url is None else url
+            hg_node = '' if hg_node is None else hg_node
+            rest_of_url = '' if rest_of_url is None else rest_of_url
+            last = '' if last is None else last
+
+            print('--')
+            print(matchobj.group(0), '|', first, '|', last)
+
+            formatted_url = False
+            if len(first) == 3 and first[-2:] == '](' and first[0] != '\\':
+                if last == ')':
+                    formatted_url = True
+                else: 
+                    # we've found a URL in the () portion of a []() markdown formatted URL, but it doesn't conform
+                    # to the expected format, so we will skip it
+                    return  matchobj.group(0)
+
             git_hash = self.hgnode_to_githash(hg_node)
             # only replace the URL if the hash was found in this repo
             if git_hash is not None:
-                from_ = formatted_url + base_url + hg_node + rest_of_url
                 if self.archive_url is not None:
-                    to_ = formatted_url + self.archive_url + '/commits/' + hg_node + rest_of_url
+                    to_ = first + self.archive_url + '/commits/' + hg_node + rest_of_url 
+                    # If it's a formatted []() url, then add the github link after the entire match
                     if formatted_url:
-                        # This assumes that the markdown formatting has a closing bracket immediately following the URL
-                        # I think this is a safe assumption
-                        from_ += ")"
-                        to_   += ")"
+                        to_ += last
 
                     repo = ""
                     if git_repo_prefix:
                         repo = self.gh_repo + "@"
-                    to_ += " ({repo}{hash})".format(repo=repo, git_hash)
+                    to_ += " ({repo}{hash})".format(repo=repo, hash=git_hash)
+
+                    # if it's not a formatted url, make sure we don't throw away the matched content that came afterwards!
+                    if not formatted_url:
+                        to_ += last
                 else:
                     if formatted_url:
-                        to_ = formatted_url + self.gh_url + '/commit/' + git_hash
+                        to_ = first + self.gh_url + '/commit/' + git_hash + last
                     else:
                         repo = ""
                         if git_repo_prefix:
                             repo = self.gh_repo + "@"
-                        to_ = "{repo}{hash}".format(repo=repo, git_hash)
+                        to_ = first + "{repo}{hash}".format(repo=repo, hash=git_hash) + last
+            else:
+                # Can't find the hg hash, so we skip it
+                return matchobj.group(0)
 
-                content = content.replace(from_, to_)
-                #logging.info("%s -> %s", from_, to_)
+            return to_
+                
+        base_url = self.bb_url + "/commits/"
+        content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)(.{1})?", repl, content, flags=re.MULTILINE)
+        # content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)([^\(]*?[\)])?", repl, content, flags=re.MULTILINE)
         return content
 
     # 
