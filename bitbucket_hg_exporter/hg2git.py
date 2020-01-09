@@ -27,9 +27,6 @@ import argparse
 import requests
 import dateutil.parser
 
-# TODO: Update code to replace links with links to the archived site as the BitBucket content will be deleted!
-
-
 class memoize(object):
     def __init__(self):
         self.cache = {}
@@ -92,6 +89,7 @@ class BbToGh(object):
     def __init__(self, hg_logs, git_logs, bb_url, gh_url, user_mapping, archive_url=None):
         self.bb_url = bb_url.rstrip("/")
         self.gh_url = gh_url.rstrip("/")
+        self.gh_repo = self.gh_url.replace('https://github.com/', '')
         self.hg_to_git = {}
         self.hg_dates = {}
         self.hg_revnum_to_hg_node = {}
@@ -158,13 +156,24 @@ class BbToGh(object):
         content = self.normalize_bb_url(content)
         content = self.convert_cset_marker(content)
         content = self.convert_bb_cset_link(content)
+        content = self.convert_markupless_cset_marker(content)
         content = self.convert_bb_issue_link(content)
         content = self.convert_bb_src_link(content)
         content = self.convert_bb_user_link(content)
         content = self.convert_bb_pr_marker(content)
+        content = self.replace_bb_url_with_archive(content)
         return content
 
-    def convert_cset_marker(self, content):
+    def convert_other_repo_content(self, content):
+        content = self.normalize_bb_url(content)
+        content = self.convert_bb_cset_link(content, git_repo_prefix=True)
+        content = self.convert_markupless_cset_marker(content, git_repo_prefix=True)
+        content = self.convert_bb_issue_link(content, git_repo_prefix=True)
+        content = self.convert_bb_src_link(content)
+        content = self.replace_bb_url_with_archive(content)
+        return content
+
+    def convert_cset_marker(self, content, git_repo_prefix=False):
         r"""
         before-1: '<<cset 0f18c81b53fc>>'  (hg-node)
         before-2: '<<changeset 0f18c81b53fc>>'  (hg-node)
@@ -178,9 +187,19 @@ class BbToGh(object):
                 git_hash = self.hgnode_to_githash(hg_node.split(":")[1])
             else:
                 git_hash = self.hgnode_to_githash(hg_node)
-            content = content.replace(
-                r"<<%s %s>>" % (marker, hg_node), r"\<\<cset %s\>\>" % git_hash
-            )
+
+            # only replace the hash if we actually found it
+            if git_hash is not None:
+                if git_repo_prefix:
+                    git_hash = self.gh_repo + '@' + git_hash
+                content = content.replace(
+                    r"<<%s %s>>" % (marker, hg_node), r"\<\<cset %s\>\>" % git_hash
+                )
+        return content
+
+    # TODO: write this
+    def convert_markupless_cset_marker(self, content, git_repo_prefix=False):
+        "finds floating cset fragments and converts them to a githash (prepended with the github repo if requested)"
         return content
 
     def normalize_bb_url(self, content):
@@ -191,41 +210,112 @@ class BbToGh(object):
         )
         return content
 
-    def convert_bb_cset_link(self, content):
-        r"""
-        before: bb_url + '/commits/e282b3a8ef4802da3a685f10b5e9a39633e2c23a'
-        after: ' 1d063726ee185dce974f919f2ae696bd1b6b826b '
-        """
-        base_url = self.bb_url + "/commits/"
-        url_pairs = re.findall(base_url + r"([0-9a-f]+)(/?)", content)
-        for hg_node, rest_of_url in url_pairs:
-            git_hash = self.hgnode_to_githash(hg_node)
-            from_ = base_url + hg_node + rest_of_url
-            to_ = " %s " % git_hash
-            content = content.replace(from_, to_)
-            #logging.info("%s -> %s", from_, to_)
+    def replace_bb_url_with_archive(self, content):
+        if self.archive_url is not None:
+            content = content.replace(self.bb_url, self.archive_url)
         return content
 
+    # TODO: I don't like the use of str.replace here as it could catch cases we are trying to ignore.
+    #       Should be able to replace it with re.sub()
+    def convert_bb_cset_link(self, content, git_repo_prefix=False):
+        r"""
+        before: bb_url + '/commits/e282b3a8ef4802da3a685f10b5e9a39633e2c23a'
+        after:
+            it matches whether it is a bare URL or a []() formatted URL
+            if there is an archive URL:
+                it just replaces the bb url with the archive url
+                if it is a bare URL:
+                    appends a cset hash after the link in brackets (using git_repo_prefix if appropriate)
+                if it is a []() formatted URL
+                    appends a cset hash in brackets (outside of the []() and using git_repo_prefix if appropriate)
+            if there is not an archive URL:
+                if it is a bare URL:
+                    replace with cset hash (using git_repo_prefix if appropriate)
+                if it is a []() formatted URL:
+                    replace the URL with a github cset link but do not modify the text
+        """
+        base_url = self.bb_url + "/commits/"
+        url_pairs = re.findall(r"(\]\()?" + re.escape(base_url) + r"([0-9a-f]+)(/?)", content)
+        for formatted_url, hg_node, rest_of_url in url_pairs:
+            git_hash = self.hgnode_to_githash(hg_node)
+            # only replace the URL if the hash was found in this repo
+            if git_hash is not None:
+                from_ = formatted_url + base_url + hg_node + rest_of_url
+                if self.archive_url is not None:
+                    to_ = formatted_url + self.archive_url + '/commits/' + hg_node + rest_of_url
+                    if formatted_url:
+                        # This assumes that the markdown formatting has a closing bracket immediately following the URL
+                        # I think this is a safe assumption
+                        from_ += ")"
+                        to_   += ")"
+
+                    repo = ""
+                    if git_repo_prefix:
+                        repo = self.gh_repo + "@"
+                    to_ += " ({repo}{hash})".format(repo=repo, git_hash)
+                else:
+                    if formatted_url:
+                        to_ = formatted_url + self.gh_url + '/commit/' + git_hash
+                    else:
+                        repo = ""
+                        if git_repo_prefix:
+                            repo = self.gh_repo + "@"
+                        to_ = "{repo}{hash}".format(repo=repo, git_hash)
+
+                content = content.replace(from_, to_)
+                #logging.info("%s -> %s", from_, to_)
+        return content
+
+    # 
+    # Dev notes:
+    #
+    # Test str (we want to match against every #1xx PR but not every #2xx issue in the test str):
+    #   blah blah pull request #17 blah blah [pull request #23](asdf) blah blah [labscript pull request #25]() hjkhaskdjhdshdsa kjdhask pull request #11 hjksdahjadsh [labscript blah blah ] pull request #15 ]() pull request #14 [labscript blah blah \] pull request #28 ]() pull request #113 pull request #167  [labscript blah blah pull request #28 \] ]() [labscript blah blah pull request #15] ]() [labscript blah blah \] pull request #28 \] ]()
+    #
+    # Almost works:
+    #   (\[.*?(\b(pull request #(\d+))\b)?.*?(?<!\\)\])*.*?(\b(pull request #(\d+))\b)?
+    # I think this works: 
+    #   ((\[.*?(\b(pull request #(\d+))\b)?.*?(?<!\\)\])|(\b(pull request #(\d+))\b))
+    # Cleaned up a little:
+    #   (?:\[.*?(\bpull request #\d+\b)?.*?(?<!\\)\])|(?:\b(pull request #(\d+))\b)
+    # Better:
+    #   (?:(?<!\\)\[(?:[^\]]*?(?:\\\][^\]]*?)?)?(\bpull request #\d+\b)?(?:[^\]]*?(?:\\\][^\]]*?)?)?(?<!\\)\]\(.*?\))|(?:\b(pull request #(\d+))\b)
+    #
+    #   Now any match with a non-empty group 2/3 is a match we want to replace!
     def convert_bb_pr_marker(self, content):
         r"""
-        before: 'pull request #123'
-        after: self.bb_url + '/pull-request/123'
+        Matches pull request text ("pull request #???" or "PR #???") and replaces it with a markdown link to either the BitBucket archive or BitBucket itself
+        The complex regex ensures that we do not replace matching text that is alredy inside a valid markdown link.
+        This is necessary for content that has links to pull requests in other repositories, which may be formatted similarly, e.g.
+            [other repository pull request #3](url to repo pull request)
+        and should not re reformatted by this method.
+        The replace_bb_url_with_archive() method will catch these cases later (and rewrite them to the BitBucket archive URL if it exists)
         """
-        regex_strs = [
-            r"\b(pull request #(\d+))\b",
-            r"\b(PR #(\d+))\b",
-        ]
-        for regex_str in regex_strs:
-            captures = re.findall(regex_str, content)
-            for replacer, pr_number in captures:
-                if self.archive_url is not None:
-                    content = content.replace(
-                        replacer, "%s/pull-requests/%s" % (self.archive_url, pr_number)
-                    )
-                else:
-                    content = content.replace(
-                        replacer, "%s/pull-requests/%s" % (self.bb_url, pr_number)
-                    )
+
+        if self.archive_url is not None:
+            url = "%s/pull-requests" % (self.archive_url)
+        else:
+            url = "%s/pull-requests" % (self.bb_url)
+
+        def repl(matchobj):
+            if matchobj.group(2) is not None:
+                return "[{all}]({url}/{id})".format(all=matchobj.group(0), url=url, id=matchobj.group(3))
+            else:
+                return matchobj.group(0)
+
+        content = re.sub(
+            r'(?:(?<!\\)\[(?:[^\]]*?(?:\\\][^\]]*?)?)?(\bpull request #\d+\b)?(?:[^\]]*?(?:\\\][^\]]*?)?)?(?<!\\)\]\(.*?\))|(?:\b(pull request #(\d+))\b)',
+            repl,
+            content,
+            flags=re.MULTILINE|re.IGNORECASE
+        )
+
+        content = re.sub(
+            r'(?:(?<!\\)\[(?:[^\]]*?(?:\\\][^\]]*?)?)?(\bPR #\d+\b)?(?:[^\]]*?(?:\\\][^\]]*?)?)?(?<!\\)\]\(.*?\))|(?:\b(PR #(\d+))\b)',
+            repl,
+            content,
+            flags=re.MULTILINE|re.IGNORECASE
+        )
         return content
 
     def convert_bb_src_link(self, content):
@@ -249,7 +339,22 @@ class BbToGh(object):
             #logging.info("%s -> %s", from_, to_)
         return content
 
-    def convert_bb_issue_link(self, content):
+    # TODO: this needs to be rewritten so that:
+    #   it matches whether it is a bare URL or a []() formatted URL
+    #   if there is an archive URL:
+    #       it just replaces the bb url with the archive url
+    #       if it is a bare URL:
+    #           appends a #issuenum after the link in brackets (using git_repo_prefix if appropriate)
+    #       if it is a []() formatted URL
+    #           appends #issuenum in brackets (outside of the []() and using git_repo_prefix if appropriate)
+    #   if there is not an archive URL:
+    #       if it is a bare URL:
+    #           replace with #issuenum (using git_repo_prefix if appropriate)
+    #       if it is a []() formatted URL:
+    #           replace the URL with a github issue link but do not modify the text
+    # TODO: I don't like the use of str.replace here as it could catch cases we are trying to ignore.
+    #       Should be able to replace it with re.sub()
+    def convert_bb_issue_link(self, content, git_repo_prefix=False):
         r"""
         before: bb_url + '/issue/63/issue-title-string'
         after: '#63'
