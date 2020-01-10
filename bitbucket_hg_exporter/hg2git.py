@@ -48,7 +48,6 @@ class memoize(object):
         return wrap
 
 
-# TODO: Fix this or repace it
 @memoize()
 def get_bb_username(user, try_with_braces=False):
     # fmt: off
@@ -197,9 +196,80 @@ class BbToGh(object):
                 )
         return content
 
-    # TODO: write this
     def convert_markupless_cset_marker(self, content, git_repo_prefix=False):
         "finds floating cset fragments and converts them to a githash (prepended with the github repo if requested)"
+
+        def repl(matchobj):
+            first = matchobj.group(1)
+            second = matchobj.group(2)
+            third = matchobj.group(3)
+            hg_node = matchobj.group(4)
+
+            # if we have matched a hg_node outside of a []() URL
+            if hg_node is not None:
+                git_hash = self.hgnode_to_githash(hg_node)
+                # only replace the URL if the hash was found in this repo
+                if git_hash is not None:
+                    return git_hash
+                else:
+                    return matchobj.group(0)
+            # else we ignore it. If the URL is pointing to a changeset, then it will be picked up by 
+            # convert_bb_cset_link. If the URL is not pointing to a changeset, but the link text still contains a hash...
+            # well, that's tricky to handle in a way everyone would be happy with so we'll just ignore it.
+            else:
+                return matchobj.group(0)
+
+        content = re.sub(r"""(                          # match the []() URL format
+                                (?:
+                                    (?<!\\)\[           # match an opening square bracket not preceeded by a slash
+                                )
+                                |
+                                (?:
+                                    (?<!\\\\\\)(?<=\\\\)\[ # or an opening square brack preceeded by two slashes but not three
+                                )
+                            )
+                            (
+                                (?:
+                                    (?:[^\]\[])         # match anything but an open or close square bracket
+                                    |
+                                    (?:                 # or a close square bracket preceeded by one slash but not two
+                                        (?<!\\\\)
+                                        (?<=\\)
+                                        \]
+                                    )
+                                    |
+                                    (?:                 # or an open bracket preceeded by one slash but not two
+                                        (?<!\\\\)
+                                        (?<=\\)
+                                        \[
+                                    )
+                                    |
+                                    (?:                 # or an opening square brack preceeded by three slashes
+                                        (?<=\\\\\\)\[ 
+                                    )
+                                    |
+                                    (?:                 # or an close square brack preceeded by three slashes
+                                        (?<=\\\\\\)\] 
+                                    )
+                                )*                      # repeat zero or more times
+                            )
+                            (
+                                (?:                     # followed by a closing bracket not preceeded by a single slash
+                                    (?<!\\)
+                                    (?:\]\(.*?\))
+                                )
+                                |
+                                (?:                     # or a closing bracket preceeded by two but not three slashes
+                                    (?<!\\\\\\)
+                                    (?<=\\\\)
+                                    (?:\]\(.*?\))
+                                )
+                            )
+                            |
+                            (?:                         # match the main regex we care about if it is not within a []() URL
+                                (\b[0-9a-f]{7,40}\b)    # match a hex has between length 7 and 40
+                            )""", repl, content, flags=re.MULTILINE|re.VERBOSE)
+
         return content
 
     def normalize_bb_url(self, content):
@@ -215,6 +285,7 @@ class BbToGh(object):
             content = content.replace(self.bb_url, self.archive_url)
         return content
 
+    # TODO: This will probably fail badly if the matching URL is in the link text part of the []() formatted URL
     def convert_bb_cset_link(self, content, git_repo_prefix=False):
         r"""
         before: bb_url + '/commits/e282b3a8ef4802da3a685f10b5e9a39633e2c23a'
@@ -246,9 +317,6 @@ class BbToGh(object):
             hg_node = '' if hg_node is None else hg_node
             rest_of_url = '' if rest_of_url is None else rest_of_url
             last = '' if last is None else last
-
-            print('--')
-            print(matchobj.group(0), '|', first, '|', last)
 
             formatted_url = False
             if len(first) == 3 and first[-2:] == '](' and first[0] != '\\':
@@ -291,7 +359,7 @@ class BbToGh(object):
             return to_
                 
         base_url = self.bb_url + "/commits/"
-        content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)(.{1})?", repl, content, flags=re.MULTILINE)
+        content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")([0-9a-f]+)(/?)(.{1})?", repl, content, flags=re.MULTILINE)
         # content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)([^\(]*?[\)])?", repl, content, flags=re.MULTILINE)
         return content
 
@@ -311,6 +379,10 @@ class BbToGh(object):
     #   (?:(?<!\\)\[(?:[^\]]*?(?:\\\][^\]]*?)?)?(\bpull request #\d+\b)?(?:[^\]]*?(?:\\\][^\]]*?)?)?(?<!\\)\]\(.*?\))|(?:\b(pull request #(\d+))\b)
     #
     #   Now any match with a non-empty group 2/3 is a match we want to replace!
+    #
+    #
+    #
+    # TODO: This falls over for some obscure cases like: "[labscript blah blah pull request #15\\] ]()" which should match the malformed markdown but doesn't.
     def convert_bb_pr_marker(self, content):
         r"""
         Matches pull request text ("pull request #???" or "PR #???") and replaces it with a markdown link to either the BitBucket archive or BitBucket itself
@@ -368,37 +440,80 @@ class BbToGh(object):
             #logging.info("%s -> %s", from_, to_)
         return content
 
-    # TODO: this needs to be rewritten so that:
-    #   it matches whether it is a bare URL or a []() formatted URL
-    #   if there is an archive URL:
-    #       it just replaces the bb url with the archive url
-    #       if it is a bare URL:
-    #           appends a #issuenum after the link in brackets (using git_repo_prefix if appropriate)
-    #       if it is a []() formatted URL
-    #           appends #issuenum in brackets (outside of the []() and using git_repo_prefix if appropriate)
-    #   if there is not an archive URL:
-    #       if it is a bare URL:
-    #           replace with #issuenum (using git_repo_prefix if appropriate)
-    #       if it is a []() formatted URL:
-    #           replace the URL with a github issue link but do not modify the text
-    # TODO: I don't like the use of str.replace here as it could catch cases we are trying to ignore.
-    #       Should be able to replace it with re.sub()
+    # TODO: This will probably fail badly if the matching URL is in the link text part of the []() formatted URL
     def convert_bb_issue_link(self, content, git_repo_prefix=False):
         r"""
         before: bb_url + '/issue/63/issue-title-string'
-        after: '#63'
+        after:
+            it matches whether it is a bare URL or a []() formatted URL
+            if there is an archive URL:
+                it just replaces the bb url with the archive url
+                if it is a bare URL:
+                    appends a github issue after the link in brackets (using git_repo_prefix if appropriate)
+                if it is a []() formatted URL
+                    appends a github issue in brackets (outside of the []() and using git_repo_prefix if appropriate)
+            if there is not an archive URL:
+                if it is a bare URL:
+                    replace with github issue (using git_repo_prefix if appropriate)
+                if it is a []() formatted URL:
+                    replace the URL with a github issue link but do not modify the text
         """
+
+        def repl(matchobj):
+            first = matchobj.group(1)
+            url = matchobj.group(2)
+            issue_num = matchobj.group(3)
+            rest_of_url = matchobj.group(4)
+            last = matchobj.group(5)
+
+            # make sure none of them are None
+            first = '' if first is None else first
+            url = '' if url is None else url
+            issue_num = '' if issue_num is None else issue_num
+            rest_of_url = '' if rest_of_url is None else rest_of_url
+            last = '' if last is None else last
+
+            formatted_url = False
+            if len(first) == 3 and first[-2:] == '](' and first[0] != '\\':
+                if last == ')':
+                    formatted_url = True
+                else: 
+                    # we've found a URL in the () portion of a []() markdown formatted URL, but it doesn't conform
+                    # to the expected format, so we will skip it
+                    return  matchobj.group(0)
+
+            if self.archive_url is not None:
+                to_ = first + self.archive_url + '/issues/' + issue_num + rest_of_url 
+                # If it's a formatted []() url, then add the github link after the entire match
+                if formatted_url:
+                    to_ += last
+
+                repo = ""
+                if git_repo_prefix:
+                    repo = self.gh_repo + "#"
+                to_ += " ({repo}{id})".format(repo=repo, id=issue_num)
+
+                # if it's not a formatted url, make sure we don't throw away the matched content that came afterwards!
+                if not formatted_url:
+                    to_ += last
+            else:
+                if formatted_url:
+                    to_ = first + self.gh_url + '/issues/' + issue_num + last
+                else:
+                    repo = ""
+                    if git_repo_prefix:
+                        repo = self.gh_repo + "#"
+                    to_ = first + "{repo}{id}".format(repo=repo, id=issue_num) + last
+
+            return to_ 
+                
         base_urls = [
             self.bb_url + "/issue/",
             self.bb_url + "/issues/"
         ]
         for base_url in base_urls:
-            issue_pairs = re.findall(base_url + r"(\d+)(/[\w\d.,_-]*)?", content)
-            for issue_id, rest_of_url in issue_pairs:
-                from_ = base_url + issue_id + rest_of_url
-                to_ = "#%s" % issue_id
-                content = content.replace(from_, to_)
-                #logging.info("%s -> %s", from_, to_)
+            content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")(\d+)(/[\w\d.,_-]*)?(.{1})?", repl, content, flags=re.MULTILINE)
+            
         return content
 
     def convert_bb_user_link(self, content):
