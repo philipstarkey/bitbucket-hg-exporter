@@ -53,14 +53,31 @@ def bb_query_api(endpoint, auth, params=None):
         orig_params.update(params)
     # Catch the API limit
     retry = True
+    retry_count = 0
     response = None
     while retry:
         try:
             response = requests.get(endpoint, params=orig_params, auth=auth)
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count%5 == 4:
+                    mins_wait = retry_count//5 + 1
+                    print('BitBucket API limit likely exceeded. Will retry in {} mins...'.format(mins_wait))
+                    time.sleep(60*mins_wait)
+                else:
+                    time.sleep(5)
+                continue
             retry = False
         except requests.exceptions.SSLError:
-            print('API limit likely exceeded. Will retry in 5 mins...')
+            retry_count += 1
+            if retry_count%5 == 4:
+                mins_wait = retry_count//5 + 1
+                print('BitBucket API limit likely exceeded. Will retry in {} mins...'.format(mins_wait))
+                time.sleep(60*mins_wait)
+            else:
+                time.sleep(5)
             time.sleep(60*5)
+            continue
         except BaseException:
             # retry = False
             raise
@@ -158,6 +175,7 @@ class MigrationProject(object):
             'generate_static_pull_request_pages': True,
             'generate_static_commit_comments_pages': True,
 
+            'fork_search_complete': False,
             'bitbucket_api_download_complete': False,
             'bitbucket_api_URL_replace_complete': False,
             'bitbucket_hg_download_complete': False,
@@ -333,16 +351,25 @@ class MigrationProject(object):
                     else:
                         print('Failed to query BitBucket API when determining forks for {}.'.format(repository['full_name']))
                         sys.exit(0)
+            
             if self.__settings['backup_forks']:
-                for repository in self.__settings['bb_repositories_to_export']:
-                    # recursively get list of all forks
-                    print('Finding all forks of {}'.format(repository['full_name']))
-                    recursively_process_repositories(repository)
-                self.__save_project_settings()
+                if self.__settings['fork_search_complete']:
+                    search = q.confirm('A previous run of this script determined the list of all repository forks. Would you like to search for any new forks since the last run?').ask()
+                else:
+                    search = True
+
+                if search:
+                    for repository in self.__settings['bb_repositories_to_export']:
+                        # recursively get list of all forks
+                        print('Finding all forks of {}'.format(repository['full_name']))
+                        recursively_process_repositories(repository)
+                    self.__settings['fork_search_complete'] = True
             else:
                 # remove forks
                 self.__settings['bb_repositories_to_export'] = [repository for repository in self.__settings['bb_repositories_to_export'] if 'is_fork' in repository and not repository['is_fork']]
+                self.__settings['fork_search_complete'] = False
                 # TODO: Should we clean up files left over from fork backup?
+            self.__save_project_settings()
 
             # if we've added new forks, then we need to download them
             if len(self.__settings['bb_repositories_to_export']) > initial_num_repos:
@@ -1376,9 +1403,20 @@ class BitBucketExport(object):
             # endpoints that take a max pagelen of 100 but don't have a page by default
             {
                 'endpoint_match':[
+                    'repositories/{owner}/{repo}/refs/tags'.format(owner=self.__owner, repo=self.__repository),
+                ], 
+                'rewrites':[
+                    {
+                        'params_match':{'pagelen':None}, 
+                        'params_to_update':{'pagelen': 100},
+                    },
+                ]  
+            },
+            # endpoints that take a max pagelen of 100 but don't have a page by default and should be sorted by creation date
+            {
+                'endpoint_match':[
                     re.compile(r'repositories\/{owner}\/{repo}/issues\/(\d+)\/changes(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
                     re.compile(r'repositories\/{owner}\/{repo}/pullrequests\/(\d+)\/commits(\?*)(?!\/).*'.format(owner=self.__owner, repo=self.__repository)),
-                    'repositories/{owner}/{repo}/refs/tags'.format(owner=self.__owner, repo=self.__repository),
                 ], 
                 'rewrites':[
                     {
@@ -1520,15 +1558,18 @@ class BitBucketExport(object):
     def __print_update(self, end="\r", force=False):
         if time.time()-self.__time_of_last_update > 0.25 or force:
             print('{}/{}: Downloaded {} files ({} already downloaded, skipped {} duplicate URLs)'.format(self.__owner, self.__repository, self.__files_downloaded, self.__already_downloaded, self.__duplicates_skipped), end=end)
+            self.__time_of_last_update = time.time()
 
     def download_file(self, base_url):
         # convert url to save path
         # remove '/' before the decode as the ones that exist prior to the decode as real characters
         #  (aka the '/' in the address, not query params) shouldn't be removed
         corrected_url_path = parse.unquote(base_url.replace(r'%2F', r'')).replace(bitbucket_api_url, '').replace('https://', '').replace('http://', '')
-        special_chars = ['?', ':', '\\', '*','<', '>', '"', '|']
-        for c in special_chars:
-            corrected_url_path = corrected_url_path.replace(c,'')
+        # special_chars = ['?', ':', '\\', '*','<', '>', '"', '|']
+        # for c in special_chars:
+        #     corrected_url_path = corrected_url_path.replace(c,'')
+        corrected_url_path = str(corrected_url_path).strip().replace(' ', '_')
+        corrected_url_path = re.sub(r'(?u)[^-\w.\/\=\%\{\}]', '', corrected_url_path)
         save_path = os.path.join(self.__save_path, corrected_url_path)
 
         # save this URL in the tree

@@ -356,7 +356,11 @@ image_regex = re.compile(r'\!\[\]\((.*?)\)', re.MULTILINE)
 def apply_conversion(content, options, issue_id):
     # TODO: Replace this with the better version in hg2git.py and also run a cut down version of URL/hash replaces for other repositories that
     # are part of this project
-    content = options.mapping[options.bitbucket_repo].convert_all(content)
+    for repo, mapping in options.mapping.items():
+        if repo == options.bitbucket_repo:
+            content = mapping.convert_all(content)
+        else:
+            content = mapping.convert_other_repo_content(content)
 
     image_paths = image_regex.findall(content)
     if options.settings['github_publish_pages']:
