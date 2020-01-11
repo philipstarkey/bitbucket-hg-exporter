@@ -14,7 +14,8 @@ var app = angular.module('BitbucketBackupApp', [
   'commitDetails'
 ]);
 
-app.run(function($rootScope, $location, $anchorScroll, $routeParams, $http, $timeout) {
+app.run(['$rootScope', '$location', '$anchorScroll', '$routeParams', '$http', '$timeout', 'InitService',
+function($rootScope, $location, $anchorScroll, $routeParams, $http, $timeout, Init) {
   // $rootScope.project_name = 'empty';
   // $rootScope.relative_project_url = 'data/repositories/philipstarkey/qtutils/';
   // $http.get($rootScope.relative_project_url + '../qtutils.json').then(function(response) {
@@ -31,15 +32,25 @@ app.run(function($rootScope, $location, $anchorScroll, $routeParams, $http, $tim
   $rootScope.project_data = {};
   $http.get('repos.json').then(function(response){
     $rootScope.projects = response.data;
+    var promises = [];
     angular.forEach($rootScope.projects,  function(value, key){
-      $http.get(value['project_file']).then(function(p_response) {
+      promises.push($http.get(value['project_file']).then(function(p_response) {
         $rootScope.project_data[key] = p_response.data;
-      });
+      }));
     });
+    Promise.all(promises).then(function(){Init.defer.resolve();});
   });
 
   $rootScope.$on('$routeChangeSuccess', function(newRoute, oldRoute) {
     $timeout(function(){$anchorScroll($location.hash());}, 200);  
   });
 
-})
+}])
+
+app.service('InitService', ['$q', function ($q) {
+  var d = $q.defer();
+  return {
+    defer: d,
+    promise: d.promise 
+  };
+}]);
