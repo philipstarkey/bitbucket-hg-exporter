@@ -137,9 +137,10 @@ class BbToGh(object):
             if hg_node.isdigit():
                 hg_node = self.hg_revnum_to_hg_node[int(hg_node)]
                 full_node = self.find_hg_node(hg_node)
-                if full_node is None:
-                    #logger.warning("hg node %s is not found in hg log", hg_node)
-                    return None
+        if full_node is None:
+            #logger.warning("hg node %s is not found in hg log", hg_node)
+            return None
+
         git_hash = self.hg_to_git[full_node]
         if git_hash is None:
             #logger.warning(
@@ -267,6 +268,7 @@ class BbToGh(object):
                             )
                             |
                             (?:                         # match the main regex we care about if it is not within a []() URL
+                                (?<!/)                  # and is not preceeded by a "/" which would indicate it was part of a URL
                                 (\b[0-9a-f]{7,40}\b)    # match a hex has between length 7 and 40
                             )""", repl, content, flags=re.MULTILINE|re.VERBOSE)
 
