@@ -424,6 +424,9 @@ class BbToGh(object):
     def convert_bb_src_link(self, content):
         r"""
         before: bb_url + '/src/e2a0e4fde89998ed46198291457d2a822bc60125/path/to/file.py?at=default#cl-321'
+                (note, the "cl-" line prefix is actually the old format. It's now "lines-" instead.
+                However, BitBucket actually accepts anything or nothing as the prefix, presumably
+                so that BitBucket is backwards compatible with the old format, so we'll do the same)
         after: gh_url + '/blob/6336eab7c825852a058ed8a744be905c003ccbb8/path/to/file.py#L321'
         """
         base_url = self.bb_url + "/src/"
@@ -431,8 +434,8 @@ class BbToGh(object):
         for hg_node, rest_of_url in url_pairs:
             parsed_url = urlparse.urlparse(rest_of_url)
             line = ""
-            if re.match("cl-\d+", parsed_url.fragment):
-                line = "#L" + re.match("cl-(\d+)", parsed_url.fragment).groups()[0]
+            if re.match("-\d+", parsed_url.fragment):
+                line = "#L" + re.match("-(\d+)", parsed_url.fragment).groups()[0]
             git_hash = self.hgnode_to_githash(hg_node)
             if git_hash is None:
                 git_hash = "master"
