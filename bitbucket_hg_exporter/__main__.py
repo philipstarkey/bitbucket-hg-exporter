@@ -379,13 +379,9 @@ class MigrationProject(object):
 
             exporter = BitBucketExport(owner, auth, copy.deepcopy(self.__settings))
             if not self.__settings['bitbucket_api_download_complete'] or not self.__settings['bitbucket_api_URL_replace_complete']:
-                try:
-                    exporter.backup_api()
-                except BaseException:
-                    sys.exit(1)
-                else:
-                    self.__settings['bitbucket_api_download_complete'] = True
-                    self.__save_project_settings()
+                exporter.backup_api()
+                self.__settings['bitbucket_api_download_complete'] = True
+                self.__save_project_settings()
 
             # clone the Hg repos (including forks if specified)
             logs = {}
@@ -1349,6 +1345,7 @@ class BitBucketExport(object):
 
     def backup_api(self):
         self.__repository_list = [tuple(repository['full_name'].split('/')) for repository in self.__options['bb_repositories_to_export']]
+        mapping = [repo['full_name'] for repo in self.__options['bb_repositories_to_export']]
         for repository in self.__repos_to_export:
             # this is a bit of a hack but whatever!
             self.__owner, self.__repository = repository['full_name'].split('/')
@@ -1361,7 +1358,7 @@ class BitBucketExport(object):
             self.__print_update(end="\n", force=True)
             # clear the dummy response cache as we don't need it one we finish with a repository
             self.__dummy_response_cache = {}
-            self.make_urls_relative(mapping=self.__options['bb_repositories_to_export'].keys())
+            self.make_urls_relative(mapping=mapping)
             # reset the tree
             self.__tree = []
             self.__current_tree_location = ()
@@ -1869,7 +1866,7 @@ class BitBucketExport(object):
                     for name in mapping:
                         data = data.replace('https://bitbucket.org/{}'.format(name), '#!/{}'.format(name))
 
-                    for old_url, (new_url, _) in self.__external_URL_rewrites:
+                    for old_url, (new_url, _) in self.__external_URL_rewrites.items():
                         data = data.replace(old_url, new_url)
 
                     # save file
