@@ -26,10 +26,10 @@
                         <td>Parents: <span ng-repeat="parent in $ctrl.commit.parents"><br /><a ng-href="{{parent.links.html.href}}">{{parent.hash}}</a></span></td>
                       </tr>
                       <tr>
-                        <td>Branch: TODO</td>
+                        <td>Branch: {{$ctrl.commit.branches}}</td>
                       </tr>
-                      <tr>
-                        <td>Tags: TODO</td>
+                      <tr ng-if="$ctrl.commit.tags">
+                        <td>Tags: <span ng-repeat="tag in $ctrl.commit.tags">{{tag}}<span ng-if="!$last">, </span></span></td>
                       </tr>
                       <tr>
                         <td>Date: <span uib-tooltip="{{$ctrl.commit.date | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.commit.date | date: 'yyyy-MM-dd'}}</span></td>

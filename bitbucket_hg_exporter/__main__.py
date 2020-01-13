@@ -10,9 +10,10 @@ import argparse
 from collections import OrderedDict
 import copy
 import datetime
-import json
+import gc
 import getpass
 import html
+import json
 import queue
 import re
 import requests
@@ -783,13 +784,32 @@ class MigrationProject(object):
                     if not self.__settings['github_import_forks']:
                         if 'is_fork' in repository and repository['is_fork']:
                             continue
+
+                    # load .hgtags file if it exists
+                    hg_tags_path = os.path.join(self.__settings['project_path'], 'hg-repos', *repository['full_name'].split('/'), '.hgtags')
+                    hg_tags = {}
+                    if os.path.exists(hg_tags_path):
+                        with open(hg_tags_path, 'r') as f:
+                            for line in f:
+                                parts = line.split(' ')
+                                node_tags = hg_tags.get(parts[0], [])
+                                node_tags.append(" ".join(parts[1:]))
+                            
                     repo_api_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
                     for filename in os.listdir(os.path.join(repo_api_path, 'commit')):
                         if filename.endswith('.json'):
                             with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
                                 data = json.load(f)
                             with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
+                                # get git hash
                                 data['git_hash'] = mapping[repository['full_name']].hgnode_to_githash(data['hash'])
+                                # get tags
+                                data['tags'] = hg_tags[data['hash']] if data['hash'] in hg_tags else None
+                                # get branch(es) (note: hg log command calls this "branches" but I think there is only ever one branch name for a commit)
+                                data['branches'] = 'default'
+                                if data['hash'] in mapping[repository['full_name']].hg_branches and mapping[repository['full_name']].hg_branches[data['hash']]:
+                                    data['branches'] = mapping[repository['full_name']].hg_branches[data['hash']]
+                                # write out the data
                                 json.dump(data, f)
                                 if data['git_hash'] is None:
                                     print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
@@ -1311,6 +1331,8 @@ class BitBucketExport(object):
             self.__print_update()
             self.__backup_api()
             self.__print_update(end="\n", force=True)
+            # clear the dummy response cache as we don't need it one we finish with a repository
+            DummyResponse.clear_cache()
 
     def __backup_api(self):    
         self.file_download_regexes = [
@@ -1878,6 +1900,11 @@ class DummyResponse(object):
         obj = super(DummyResponse, cls).__new__(cls)
         DummyResponse.cache[path] = obj
         return obj
+
+    @classmethod
+    def clear_cache(cls):
+        DummyResponse.cache = {}
+        gc.collect()
         
 if __name__ == "__main__":
     project = MigrationProject()

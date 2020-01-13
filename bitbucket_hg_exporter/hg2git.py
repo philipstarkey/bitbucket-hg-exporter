@@ -91,6 +91,7 @@ class BbToGh(object):
         self.gh_repo = self.gh_url.replace('https://github.com/', '')
         self.hg_to_git = {}
         self.hg_dates = {}
+        self.hg_branches = {}
         self.hg_revnum_to_hg_node = {}
         self.user_mapping = user_mapping
         self.archive_url = archive_url.rstrip("/") if archive_url is not None else None
@@ -100,6 +101,7 @@ class BbToGh(object):
             node = hg_log["node"].strip()
             date = dateutil.parser.parse(hg_log["date"])
             self.hg_dates[node] = date
+            self.hg_branches[node] = hg_log['branches'] if 'branches' in hg_log and hg_log['branches'] else None
             key = (date, hg_log["desc"].strip())
             key_to_hg.setdefault(key, []).append(node)
             if len(key_to_hg[key]) > 1:
@@ -582,12 +584,13 @@ def get_git_log(repo_path):
 
 
 def get_hg_log(repo_path):
-    uuid_delim = "|{}|".format(str(uuid.uuid4()))
+    uuid_node_delim = "|{}|".format(str(uuid.uuid4()))
+    uuid_item_delim = "|{}|".format(str(uuid.uuid4()))
     templates = [
         "{rev}|{node}|{date|isodatesec}\n",
-        "{author}\n",
-        "{desc}" + uuid_delim,
+        "{desc}" + uuid_item_delim + "{author}" + uuid_item_delim + "{branches}" + uuid_node_delim,
     ]
+
 
     hg_data = []
     for t in templates:
@@ -596,8 +599,8 @@ def get_hg_log(repo_path):
             cmd, stdout=subprocess.PIPE, universal_newlines=True, errors="replace"
         )
         data, _ = p.communicate()
-        if uuid_delim in t:
-            hg_data.append(data.split(uuid_delim))
+        if uuid_node_delim in t:
+            hg_data.append(data.split(uuid_node_delim))
         else:
             hg_data.append(data.split("\n"))
 
@@ -607,8 +610,9 @@ def get_hg_log(repo_path):
             continue
         message = {}
         message["revnum"], message["node"], message["date"] = d.split("|")
-        message["email"] = hg_data[1][i].replace("\r", "")
-        message["desc"] = hg_data[2][i].rstrip("\n")
+        message["desc"], message['email'], message['branches'] = hg_data[1][i].split(uuid_item_delim)
+        message["desc"]  = message["desc"].rstrip("\n")
+        message["email"] = message["email"].replace("\r", "")
         output.append(message)
 
     return list(reversed(output))
@@ -633,9 +637,17 @@ if __name__ == "__main__":
         print(
             "Below are the items which did not match, likely due to git vs hg reordering"
         )
+
+        mapping = BbToGh(rhg, rgit, '', '', '', '')
+
         for h, g in zip(rhg, rgit):
-            if h["desc"] != g["desc"]:
-                print(h["revnum"])
-                print(h["desc"])
-                print(g["desc"])
+            print(h['revnum'], h['branches'])
+            if mapping.hgnode_to_githash(h['node']) is None:
+                print(h)
+            # if h["desc"] != g["desc"]:
+            #     print('--')
+            #     print(h["revnum"])
+            #     print(h["desc"])
+            #     print('--')
+            #     print(g["desc"])
 
