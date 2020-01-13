@@ -367,7 +367,7 @@ class MigrationProject(object):
                     self.__settings['fork_search_complete'] = True
             else:
                 # remove forks
-                self.__settings['bb_repositories_to_export'] = [repository for repository in self.__settings['bb_repositories_to_export'] if 'is_fork' in repository and not repository['is_fork']]
+                self.__settings['bb_repositories_to_export'] = [repository for repository in self.__settings['bb_repositories_to_export'] if 'is_fork' not in repository or not repository['is_fork']]
                 self.__settings['fork_search_complete'] = False
                 # TODO: Should we clean up files left over from fork backup?
             self.__save_project_settings()
@@ -379,9 +379,13 @@ class MigrationProject(object):
 
             exporter = BitBucketExport(owner, auth, copy.deepcopy(self.__settings))
             if not self.__settings['bitbucket_api_download_complete'] or not self.__settings['bitbucket_api_URL_replace_complete']:
-                exporter.backup_api()
-                self.__settings['bitbucket_api_download_complete'] = True
-                self.__save_project_settings()
+                try:
+                    exporter.backup_api()
+                except BaseException:
+                    sys.exit(1)
+                else:
+                    self.__settings['bitbucket_api_download_complete'] = True
+                    self.__save_project_settings()
 
             # clone the Hg repos (including forks if specified)
             logs = {}
@@ -420,11 +424,13 @@ class MigrationProject(object):
                 # Generate mapping for rewriting changesets and other items
                 logs[repository['full_name']] = {'hg': hg2git.get_hg_log(clone_dests[0][0])}
 
-            github_auth = (self.__settings['master_github_username'], self.__get_password('github', self.__settings['master_github_username']))
+            github_auth = ('', '') # empty values. Will be filled in if we are actually using GitHub (see a few lines below)
             github_headers = {"Accept": "application/vnd.github.barred-rock-preview"}
 
             # If needed, import all repositories to GitHub
             if self.__settings['import_to_github']:
+                github_auth = (self.__settings['master_github_username'], self.__get_password('github', self.__settings['master_github_username']))
+            
                 def find_fork_parent(repo):
                     if 'is_fork' in repo and repo['is_fork']:
                         if 'parent' in repo and 'full_name' in repo['parent']:
@@ -1121,6 +1127,19 @@ class MigrationProject(object):
 
         elif choices[response] == 2:
             self.__settings['import_to_github'] = False
+            self.__settings.update({
+                'master_github_username': '',
+                'github_owner': '',
+                'github_user_mapping_path': '',
+                'bb_gh_user_mapping': {},
+                'github_import_issues': False,
+                'github_publish_pages': False,
+                'github_pages_repo_name': '',
+                'github_rewrite_additional_URLs': False,
+                'github_URL_rewrite_file_path': '',
+                'github_import_forks': False,
+                'github_existing_repositories': {},
+            })
         else:
             raise RuntimeError('Unknown option selected')
     
