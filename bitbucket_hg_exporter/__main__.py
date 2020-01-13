@@ -634,11 +634,15 @@ class MigrationProject(object):
             #       b) update the acquired git log with the new hash
             #       c) Make sure that all the authors are mapped appropriately since force pushing to the github repo will result in you not being able to map any more users.
             
+            # Note: This is now done as part of the call to exporter.backup_api() in order to not need to hold the entire structure of the 
+            #       BitBucket API (for every repo) in RAM until all repos/forks are downloaded.
+            #
             # rewrite URLS to reference the downloaded ones
-            if not self.__settings['bitbucket_api_URL_replace_complete']:
-                exporter.make_urls_relative(mapping=mapping)
-                self.__settings['bitbucket_api_URL_replace_complete'] = True
-                self.__save_project_settings()
+            # if not self.__settings['bitbucket_api_URL_replace_complete']:
+            #     exporter.make_urls_relative(mapping=mapping)
+            #     self.__settings['bitbucket_api_URL_replace_complete'] = True
+            #     self.__save_project_settings()
+
             # copy the gh-pages template to the project directory
             do_copy = True
             if os.path.exists(os.path.join(self.__settings['project_path'], 'gh-pages', 'index.html')):
@@ -1310,10 +1314,11 @@ class BitBucketExport(object):
     # We can't parallelise the download of JSON data if we want to be able to 
     # resume it without processing every saved JSON file
     #
-    def __init__(self, owner, credentials, options):
+    def __init__(self, owner, credentials, options, subset=None):
         self.__owner = owner
         self.__credentials = credentials
         self.__options = options
+        self.__dummy_response_cache = {}
 
         self.__save_path = os.path.join(options['project_path'], 'bitbucket_data_raw')
         self.__save_path_relative = os.path.join(options['project_path'], 'gh-pages', 'data')
@@ -1322,6 +1327,11 @@ class BitBucketExport(object):
         if options['github_rewrite_additional_URLs']:
             with open(options['github_URL_rewrite_file_path'], 'r') as f:
                 self.__external_URL_rewrites = json.load(f)
+
+        if subset is not None:
+            self.__repos_to_export = [repo for repo in self.__options['bb_repositories_to_export'] if repo['full_name'] in subset]
+        else:
+            self.__repos_to_export = self.__options['bb_repositories_to_export']
 
         self.__tree = []
         self.__current_tree_location = ()
@@ -1338,11 +1348,10 @@ class BitBucketExport(object):
 
 
     def backup_api(self):
-        self.__repository_list = []
-        for repository in self.__options['bb_repositories_to_export']:
+        self.__repository_list = [tuple(repository['full_name'].split('/')) for repository in self.__options['bb_repositories_to_export']]
+        for repository in self.__repos_to_export:
             # this is a bit of a hack but whatever!
             self.__owner, self.__repository = repository['full_name'].split('/')
-            self.__repository_list.append(tuple(repository['full_name'].split('/')))
             self.__files_downloaded = 0
             self.__duplicates_skipped = 0
             self.__already_downloaded = 0
@@ -1351,7 +1360,12 @@ class BitBucketExport(object):
             self.__backup_api()
             self.__print_update(end="\n", force=True)
             # clear the dummy response cache as we don't need it one we finish with a repository
-            DummyResponse.clear_cache()
+            self.__dummy_response_cache = {}
+            self.make_urls_relative(mapping=self.__options['bb_repositories_to_export'].keys())
+            # reset the tree
+            self.__tree = []
+            self.__current_tree_location = ()
+            self.tree_new_level()
 
     def __backup_api(self):    
         self.file_download_regexes = [
@@ -1693,7 +1707,7 @@ class BitBucketExport(object):
 
         if os.path.exists(endpoint_path):
             # load the file
-            response = DummyResponse(endpoint_path)
+            response = DummyResponse(endpoint_path, self.__dummy_response_cache)
             if response.already_processed:
                 # mark as already processed
                 tree[-1]['already_processed'] = True
@@ -1892,9 +1906,7 @@ class BitBucketExport(object):
 
 
 class DummyResponse(object):
-    cache = {}
-
-    def __init__(self, path):
+    def __init__(self, path, cache):
         if getattr(self, 'already_processed', None) is not None:
             return
         self.__path = path
@@ -1910,20 +1922,15 @@ class DummyResponse(object):
         with open(self.__path, 'r') as f:
             return f.read()
 
-    def __new__(cls, path, *args, **kwargs):
-        existing = DummyResponse.cache.get(path, None)
+    def __new__(cls, path, cache, *args, **kwargs):
+        existing = cache.get(path, None)
         if existing is not None:
             # print('ignoring',path)
             existing.already_processed = True
             return existing
         obj = super(DummyResponse, cls).__new__(cls)
-        DummyResponse.cache[path] = obj
+        cache[path] = obj
         return obj
-
-    @classmethod
-    def clear_cache(cls):
-        DummyResponse.cache = {}
-        gc.collect()
         
 if __name__ == "__main__":
     project = MigrationProject()
