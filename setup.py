@@ -73,6 +73,8 @@ setup(
         'keyring',
         'requests',
         'questionary',
+        'python-dateutil',
+        'colorama',
     ],
     data_files=datafiles,
 )

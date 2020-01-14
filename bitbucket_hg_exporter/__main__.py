@@ -176,9 +176,12 @@ class MigrationProject(object):
             'generate_static_pull_request_pages': True,
             'generate_static_commit_comments_pages': True,
 
+            'bitbucket_additional_users': [],
+
             'fork_search_complete': False,
             'bitbucket_api_download_complete': False,
-            'bitbucket_api_URL_replace_complete': False,
+            # 'bitbucket_api_URL_replace_complete': False,
+            'bitbucket_api_download_complete_list': [],
             'bitbucket_hg_download_complete': False,
 
             'import_to_github': True,
@@ -273,26 +276,29 @@ class MigrationProject(object):
         while not self.__print_project_settings():
             choices = {
                 "Change primary BitBucket credentials":0, 
-                "Change BitBucket repositories to export":1,
-                "Change export settings":2,
-                "Change primary GitHub credentials":3,
-                "Change GitHub import settings":4,
+                "Add/remove additional BitBucket credentials":1, 
+                "Change BitBucket repositories to export":2,
+                "Change export settings":3,
+                "Change primary GitHub credentials":4,
+                "Change GitHub import settings":5,
             }
             if load:
-                choices["Load different project"] = 5
+                choices["Load different project"] = 6
             response = q.select("What would you like to change?", choices=choices.keys()).ask()
             if choices[response] == 0:
                 self.__get_master_bitbucket_credentials(force_new_password=True)
             elif choices[response] == 1:
+                self.__get_additional_bitbucket_credentials()
+            elif choices[response] == 2:
                 while not self.__get_bitbucket_repositories():
                     pass
-            elif choices[response] == 2:
-                self.__get_backup_options()
             elif choices[response] == 3:
-                self.__get_master_github_credentials(force_new_password=True)
+                self.__get_backup_options()
             elif choices[response] == 4:
-                self.__get_github_import_options()
+                self.__get_master_github_credentials(force_new_password=True)
             elif choices[response] == 5:
+                self.__get_github_import_options()
+            elif choices[response] == 6:
                 self.__load_project()
             else:
                 raise RuntimeError('Unknown option selected')
@@ -375,13 +381,69 @@ class MigrationProject(object):
             # if we've added new forks, then we need to download them
             if len(self.__settings['bb_repositories_to_export']) > initial_num_repos:
                 self.__settings['bitbucket_api_download_complete'] = False
-                self.__settings['bitbucket_api_URL_replace_complete'] = False
+                # self.__settings['bitbucket_api_URL_replace_complete'] = False
 
-            exporter = BitBucketExport(owner, auth, copy.deepcopy(self.__settings))
-            if not self.__settings['bitbucket_api_download_complete'] or not self.__settings['bitbucket_api_URL_replace_complete']:
-                exporter.backup_api()
+            if not self.__settings['bitbucket_api_download_complete']:
+                import colorama
+                colorama.init()
+                auth_list = [auth] + [(user, self.__get_password('bitbucket', user)) for user in self.__settings['bitbucket_additional_users']]
+                message_queue = queue.Queue()
+                subset = [[] for _ in auth_list]
+                threads = {}
+                latest_messages = ['' for _ in auth_list]
+                needs_processing = [repo for repo in self.__settings['bb_repositories_to_export'] if repo['full_name'] not in self.__settings['bitbucket_api_download_complete_list']]
+                for i, repository in enumerate(needs_processing):
+                    subset[i%len(auth_list)].append(repository['full_name'])
+
+                def thread_fn(i, message_queue):
+                    exporter = BitBucketExport(owner, auth, copy.deepcopy(self.__settings), lambda cmd, message, i=i, q=message_queue:message_queue.put((i,cmd,message)), subset=subset[i])
+                    exporter.backup_api()
+                    message_queue.put((i, 'finished', ''))
+
+                for i, credentials in enumerate(auth_list):
+                    t = threading.Thread(target=thread_fn, args=(i, message_queue))
+                    t.daemon = True
+                    t.start()
+                    threads[i] = t
+
+                last_update_time = time.time()-1
+                overwrite_last_lines = True
+                while threads:
+                    force = False
+                    try:
+                        i, cmd, message = message_queue.get(timeout=0.25)
+                    except queue.Empty:
+                        pass
+                    else:
+                        if cmd == 'update':
+                            if len(message) == 3:
+                                force = message[2]
+
+                            if message[1] == '\n':
+                                print("Thread {}: {}".format(i, message[0]))
+                                overwrite_last_lines = False
+                                force = True
+                            else:
+                                latest_messages[i] = message[0]
+                        elif cmd == 'complete':
+                            self.__settings['bitbucket_api_download_complete_list'].append(message)
+                            self.__save_project_settings()
+                        elif cmd == 'finished':
+                            del threads[i]
+
+                    if time.time() - last_update_time > 0.25 or force:
+                        last_update_time = time.time()
+                        pm = '\n'.join(["Thread {}: {}".format(i, m) for i,m in enumerate(latest_messages)])
+                        end = '\n'
+                        if overwrite_last_lines and threads:
+                            pm += '\x1b[%d;%dH'%(shutil.get_terminal_size()[1]-len(auth_list)+1, 1) #+ pm
+                            end = ''
+                        print(pm, end=end)
+                        overwrite_last_lines = True
+
                 self.__settings['bitbucket_api_download_complete'] = True
                 self.__save_project_settings()
+                colorama.deinit()
 
             # clone the Hg repos (including forks if specified)
             logs = {}
@@ -988,11 +1050,45 @@ class MigrationProject(object):
         # Get bitbucket username, password
         self.__get_master_bitbucket_credentials()
 
+        # Get additional usernames
+        response = q.confirm('Would you like to add additional BitBucket accounts in order to parallelise the download of repositories? (only useful if you are downloading more than one repository - including forks)').ask()
+        if response:
+            self.__get_additional_bitbucket_credentials()
+
         # get a list of bitbucket repositories to save
         while not self.__get_bitbucket_repositories():
             pass
 
-        # TODO: get additional credentials to bypass BitBucket API rate limit
+    def __get_additional_bitbucket_credentials(self):
+        if self.__settings['bitbucket_additional_users']:
+            print('You currently have the following BitBucket user accounts added (in addition to the master account):')
+            for user in self.__settings['bitbucket_additional_users']:
+                print(user)
+        else:
+            print('Would you like to add or remove an additional BitBucket account?')
+        print('Note that all BitBucket accounts should have the same read permissions as the master BitBucket account')
+        while True:
+            choices = {"Add user account":0, "Remove user account":1, "Continue":2}
+            response = q.select("What would you like to do?", choices=choices.keys()).ask()
+            if choices[response] == 0:
+                new_user = self.__get_bitbucket_credentials('')
+                if new_user not in self.__settings['bitbucket_additional_users']:
+                    self.__settings['bitbucket_additional_users'].append(new_user)
+            elif choices[response] == 1:
+                choices = {user:i for i,user in enumerate(self.__settings['bitbucket_additional_users'])}
+                choices ["Cancel"] = len(choices.keys())
+                response = q.select("Select user remove:", choices=choices.keys()).ask()
+                if response == "Cancel":
+                    pass
+                elif response in choices.keys():
+                    self.__settings['bitbucket_additional_users'].pop(choices[response])
+                else:
+                    raise RuntimeError('Unknown option selected')
+            elif choices[response] == 2:
+                return
+            else:
+                raise RuntimeError('Unknown option selected')
+        
 
     def __get_bitbucket_repositories(self):
         # Get BitBucket repo/project/team/user that we want to back up
@@ -1194,6 +1290,12 @@ class MigrationProject(object):
         print('    Name: {}'.format(self.__settings['project_name']))
         print('    Path: {}'.format(self.__settings['project_path']))
         print('    BitBucket username: {}'.format(self.__settings['master_bitbucket_username']))
+        print('    Additional BitBucket accounts:')
+        if self.__settings['bitbucket_additional_users']:
+            for user in self.__settings['bitbucket_additional_users']:
+                print('        {}'.format(user))
+        else:
+            print('        None')
         print('    Repositories to export:')
         for repo in self.__settings['bb_repositories_to_export']:
             if 'is_fork' in repo and repo['is_fork']:
@@ -1310,11 +1412,12 @@ class BitBucketExport(object):
     # We can't parallelise the download of JSON data if we want to be able to 
     # resume it without processing every saved JSON file
     #
-    def __init__(self, owner, credentials, options, subset=None):
+    def __init__(self, owner, credentials, options, post_message, subset=None):
         self.__owner = owner
         self.__credentials = credentials
         self.__options = options
         self.__dummy_response_cache = {}
+        self.__post_message = post_message
 
         self.__save_path = os.path.join(options['project_path'], 'bitbucket_data_raw')
         self.__save_path_relative = os.path.join(options['project_path'], 'gh-pages', 'data')
@@ -1346,9 +1449,11 @@ class BitBucketExport(object):
     def backup_api(self):
         self.__repository_list = [tuple(repository['full_name'].split('/')) for repository in self.__options['bb_repositories_to_export']]
         mapping = [repo['full_name'] for repo in self.__options['bb_repositories_to_export']]
+        # print(len(self.__repos_to_export))
         for repository in self.__repos_to_export:
             # this is a bit of a hack but whatever!
             self.__owner, self.__repository = repository['full_name'].split('/')
+            self.__repo_full_name = repository['full_name']
             self.__files_downloaded = 0
             self.__duplicates_skipped = 0
             self.__already_downloaded = 0
@@ -1359,6 +1464,7 @@ class BitBucketExport(object):
             # clear the dummy response cache as we don't need it one we finish with a repository
             self.__dummy_response_cache = {}
             self.make_urls_relative(mapping=mapping)
+            self.__post_message('complete', repository['full_name'])
             # reset the tree
             self.__tree = []
             self.__current_tree_location = ()
@@ -1609,7 +1715,9 @@ class BitBucketExport(object):
 
     def __print_update(self, end="\r", force=False):
         if time.time()-self.__time_of_last_update > 0.25 or force:
-            print('{}/{}: Downloaded {} files ({} already downloaded, skipped {} duplicate URLs)'.format(self.__owner, self.__repository, self.__files_downloaded, self.__already_downloaded, self.__duplicates_skipped), end=end)
+            message = '{}/{}: Downloaded {} files ({} already downloaded, skipped {} duplicate URLs)'.format(self.__owner, self.__repository, self.__files_downloaded, self.__already_downloaded, self.__duplicates_skipped)
+            self.__post_message('update', (message, end, force))
+            # print(message, end=end)
             self.__time_of_last_update = time.time()
 
     def download_file(self, base_url):
@@ -1756,7 +1864,8 @@ class BitBucketExport(object):
                         self.download_file(result)
                         self.tree_increment_level()
                     except BaseException:
-                        print('Failed to download file {}'.format(result))
+                        self.__post_message('update', ('{}: Failed to download file {}'.format(self.__repo_full_name, result), "\n"))
+                        # print('Failed to download file {}'.format(result))
                         raise
 
             # find all the other referenced API endpoints in this data and collect them too
@@ -1799,15 +1908,18 @@ class BitBucketExport(object):
             self.tree_finished_level()
 
         elif response.status_code == 401:
-            print("ERROR: Access denied for endpoint {endpoint}. No data was saved. Check your credentials and access permissions.".format(endpoint=rewritten_endpoint))
+            self.__post_message('update', ('{repo}: ERROR: Access denied for endpoint {endpoint}. No data was saved. Check your credentials and access permissions.'.format(repo=self.__repo_full_name, endpoint=rewritten_endpoint), "\n"))
+            # print("ERROR: Access denied for endpoint {endpoint}. No data was saved. Check your credentials and access permissions.".format(endpoint=rewritten_endpoint))
             self.__files_downloaded -= 1
             self.__print_update(force=True)
         elif response.status_code == 404:
-            print("ERROR: API endpoint {endpoint} doesn't exist".format(endpoint=rewritten_endpoint, repo=self.__repository))
+            self.__post_message('update', ('{repo}: ERROR: API endpoint {endpoint} doesn\'t exist'.format(repo=self.__repo_full_name, endpoint=rewritten_endpoint), "\n"))
+            # print("ERROR: API endpoint {endpoint} doesn't exist".format(endpoint=rewritten_endpoint, repo=self.__repository))
             self.__files_downloaded -= 1
             self.__print_update(force=True)
         else:
-            print("ERROR: Unexpected response code {code} for endpoint {endpoint}".format(code=response.status_code, endpoint=rewritten_endpoint))
+            self.__post_message('update', ('{repo}: ERROR: Unexpected response code {code} for endpoint {endpoint}'.format(repo=self.__repo_full_name, code=response.status_code, endpoint=rewritten_endpoint), "\n"))
+            # print("ERROR: Unexpected response code {code} for endpoint {endpoint}".format(code=response.status_code, endpoint=rewritten_endpoint))
             self.__files_downloaded -= 1
             self.__print_update(force=True)
 
@@ -1818,7 +1930,8 @@ class BitBucketExport(object):
         if tree is None:
             tree = self.__tree
             top_level = True
-            print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
+            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
+            # print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
         if len(tree):
             parent_percent_subset = parent_percent_subset/len(tree)
 
@@ -1879,10 +1992,12 @@ class BitBucketExport(object):
             # recurse over children
             self.make_urls_relative(item['children'], parent_percent=parent_percent, parent_percent_subset=parent_percent_subset, mapping=mapping)
             parent_percent += parent_percent_subset
-            print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
+            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
+            # print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
 
         if top_level:
-            print('Rewriting URLs in downloaded API data: 100.0% complete')
+            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: 100.0% complete'.format(repo=self.__repo_full_name), "\n"))
+            # print('Rewriting URLs in downloaded API data: 100.0% complete')
 
     def fix_stupid_bitbucket_urls(self, matchobj):
         # If the URL matches one of the respositories we are backing up, rewrite it to point to the correct
