@@ -29,6 +29,7 @@ from OpenSSL.SSL import SysCallError
 from distutils.dir_util import copy_tree
 
 from . import hg2git
+from . import __version__ as software_version 
 from .issue_migrate import import_issues_to_github
 
 bitbucket_api_url = 'https://api.bitbucket.org/2.0/'
@@ -69,7 +70,7 @@ def bb_query_api(endpoint, auth, params=None):
                     time.sleep(5)
                 continue
             retry = False
-        except requests.exceptions.SSLError:
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError):
             retry_count += 1
             if retry_count%5 == 4:
                 mins_wait = retry_count//5 + 1
@@ -1022,6 +1023,7 @@ class MigrationProject(object):
             raise RuntimeError('Unknown option selected')
 
     def __save_project_settings(self):
+        self.__settings['__version__'] = software_version
         with open(os.path.join(self.__settings['project_path'], 'project.json'), 'w') as f:
             json.dump(self.__settings, f, indent=4)
 
@@ -1655,8 +1657,13 @@ class BitBucketExport(object):
             },
         ]
 
+        self.url_queue = queue.Queue()
+        self.url_queue.put(('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}'.format(owner=self.__owner, repo=self.__repository), self.__tree))
+
         # Backup everything
-        self.get_and_save_json('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}'.format(owner=self.__owner, repo=self.__repository), ignore_rules + pr_ignores, rewrite_rules)
+        while not self.url_queue.empty():
+            url, tree = self.url_queue.get()
+            self.get_and_save_json(url, ignore_rules + pr_ignores, rewrite_rules, tree)
         self.tree_increment_level()
         # self.make_urls_relative()
 
@@ -1720,7 +1727,7 @@ class BitBucketExport(object):
             # print(message, end=end)
             self.__time_of_last_update = time.time()
 
-    def download_file(self, base_url):
+    def download_file(self, base_url, tree):
         # convert url to save path
         # remove '/' before the decode as the ones that exist prior to the decode as real characters
         #  (aka the '/' in the address, not query params) shouldn't be removed
@@ -1733,9 +1740,9 @@ class BitBucketExport(object):
         save_path = os.path.join(self.__save_path, corrected_url_path)
 
         # save this URL in the tree
-        tree = self.__tree
-        for i in self.current_tree_location[:-1]:
-            tree = tree[i]['children']
+        # tree = self.__tree
+        # for i in self.current_tree_location[:-1]:
+        #     tree = tree[i]['children']
         tree.append({'url': base_url, 'rewritten_url': base_url, 'endpoint_path':save_path, 'already_processed': False, 'children': []})
 
 
@@ -1762,7 +1769,7 @@ class BitBucketExport(object):
         self.__files_downloaded += 1
         self.__print_update()
 
-    def get_and_save_json(self, base_url, ignore_rules, rewrite_rules):
+    def get_and_save_json(self, base_url, ignore_rules, rewrite_rules, tree):
         # TODO: handle resume from partial download 
 
         endpoint, params = full_url_to_query(base_url)
@@ -1798,9 +1805,9 @@ class BitBucketExport(object):
             rewritten_base_url += '?' + encoded_rewritten_params
 
         # save this URL in the tree
-        tree = self.__tree
-        for i in self.current_tree_location[:-1]:
-            tree = tree[i]['children']
+        # tree = self.__tree
+        # for i in self.current_tree_location[:-1]:
+        #     tree = tree[i]['children']
         tree.append({'url': base_url, 'rewritten_url': rewritten_base_url, 'endpoint_path':endpoint_path, 'already_processed': False, 'children': []})
 
         # create the dir structure
@@ -1825,12 +1832,6 @@ class BitBucketExport(object):
             response = bb_query_api(rewritten_base_url, auth=self.__credentials)
             self.__files_downloaded += 1
             self.__print_update()
-        
-        # print some debug info        
-        # print(self.current_tree_location, base_url)
-        if rewritten_base_url != base_url:
-            pass
-            # print(self.current_tree_location, rewritten_base_url)
 
         if response.status_code == 200:
             # save the data
@@ -1848,11 +1849,16 @@ class BitBucketExport(object):
             with open(endpoint_path, 'w') as f:
                 json.dump(json_data, f)
 
+            # Create dummy response now so that we don't think this file was downloaded on a previous run of the script
+            # next time it is encountered on this run of the script
+            DummyResponse(endpoint_path, self.__dummy_response_cache)
+
             self.tree_new_level()
 
             # get the other pages
             if "next" in json_data:
-                self.get_and_save_json(json_data['next'], ignore_rules, rewrite_rules)
+                self.url_queue.put((json_data['next'], tree[-1]['children']))
+                # self.get_and_save_json(json_data['next'], ignore_rules, rewrite_rules, tree[-1]['children'])
                 self.tree_increment_level()
 
             # download any files references
@@ -1861,7 +1867,7 @@ class BitBucketExport(object):
                 for result in results:
                     try:
                         # print('downloading file: {}'.format(result))
-                        self.download_file(result)
+                        self.download_file(result, tree[-1]['children'])
                         self.tree_increment_level()
                     except BaseException:
                         self.__post_message('update', ('{}: Failed to download file {}'.format(self.__repo_full_name, result), "\n"))
@@ -1875,7 +1881,8 @@ class BitBucketExport(object):
                 issue_pattern = r'repositories/{}/{}/issues/(\d+)$'.format(self.__owner, self.__repository)
                 matches = re.match(issue_pattern, result)
                 if matches:
-                    self.get_and_save_json(bb_endpoint_to_full_url(result+'/changes'), ignore_rules, rewrite_rules)
+                    self.url_queue.put((bb_endpoint_to_full_url(result+'/changes'), tree[-1]['children']))
+                    # self.get_and_save_json(bb_endpoint_to_full_url(result+'/changes'), ignore_rules, rewrite_rules, tree[-1]['children'])
                     self.tree_increment_level()
 
                 skip = False
@@ -1902,7 +1909,8 @@ class BitBucketExport(object):
                 if skip:
                     continue
 
-                self.get_and_save_json(bb_endpoint_to_full_url(result), ignore_rules, rewrite_rules)
+                self.url_queue.put((bb_endpoint_to_full_url(result), tree[-1]['children']))
+                # self.get_and_save_json(bb_endpoint_to_full_url(result), ignore_rules, rewrite_rules, tree[-1]['children'])
                 self.tree_increment_level()
             
             self.tree_finished_level()
@@ -1950,6 +1958,10 @@ class BitBucketExport(object):
                 skip_file = True
             # ignore if file doesn't exist
             if not os.path.exists(item['endpoint_path']):
+                skip_file = True
+            # only process the items that have children (we may encounter reference to a file that was marked as already processed)
+            # before we hit the reference that was not marked as already processed.
+            if item['already_processed'] and new_path.endswith('.json'):
                 skip_file = True
 
             if not skip_file:
