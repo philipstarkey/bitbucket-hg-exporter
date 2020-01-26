@@ -76,5 +76,10 @@ setup(
         'python-dateutil',
         'colorama',
     ],
+    entry_points = {
+        "console_scripts": [
+            "bitbucket-hg-exporter = bitbucket_hg_exporter.__main__:main",
+        ]
+    },
     data_files=datafiles,
 )

@@ -2055,6 +2055,9 @@ class DummyResponse(object):
         obj = super(DummyResponse, cls).__new__(cls)
         cache[path] = obj
         return obj
-        
-if __name__ == "__main__":
+
+def main():
     project = MigrationProject()
+
+if __name__ == "__main__":
+    main()

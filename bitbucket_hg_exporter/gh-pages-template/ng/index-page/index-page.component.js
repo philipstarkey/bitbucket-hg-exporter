@@ -7,7 +7,7 @@ angular.
     templateUrl: 'ng/index-page/index-page.template.html',
     controller: ['$http', '$routeParams', '$rootScope', function IndexPageController($http, $routeParams, $rootScope) {
         var self = this;
-        self.project_slug = $routeParams.project;
+        self.project_slug = $routeParams.owner + '/' + $routeParams.project;
         
     }]
   }).

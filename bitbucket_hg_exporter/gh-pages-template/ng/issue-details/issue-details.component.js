@@ -39,6 +39,20 @@ angular.
           // scroll to the comment specified in the hash if there is one
           $timeout(function(){$anchorScroll($location.hash());});
       });
+
+      // Recursively load all attachments
+      self.attachments = []
+      
+      function get_next_attachments(path) {
+        $http.get(path).then(function(response) {
+          self.attachments.push(...response.data['values']);
+          if (response.data['next']) {
+            get_next_attachments(response.data['next']);
+          }
+        });
+      }
+
+      get_next_attachments($rootScope.projects[self.project_slug]['project_path']+'issues/'+self.issueId+'/attachments_page=1.json');
         
     }]
   });

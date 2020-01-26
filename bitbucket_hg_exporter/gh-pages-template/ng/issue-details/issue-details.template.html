@@ -49,6 +49,12 @@
                 </table>
               </div>
               <p ng-bind-html="$ctrl.mainHtml"></p>
+              <div ng-if="$ctrl.attachments.length">
+                <h4>Attachments</h4>
+                <ul>
+                  <li ng-repeat="attachment in $ctrl.attachments"><a ng-href="{{attachment.links.self.href}}">{{attachment.name}}</a></li>
+                </ul>
+              </div>
             </div>
           </div>
 

@@ -28,6 +28,9 @@
                   <tr>
                     <td>Updated on: <span uib-tooltip="{{$ctrl.pr.updated_on | date: 'dd MMMM yyyy HH:mm'}}" tooltip-placement="right">{{$ctrl.pr.updated_on | date: 'yyyy-MM-dd'}}</span></td>
                   </tr>
+                  <tr ng-if="$ctrl.diff_url && $ctrl.pr.state=='MERGED'">
+                    <td><a ng-href="{{$ctrl.diff_url}}">View diff on GitHub</a></td>
+                  </tr>
                 </table>
               </div>
               <p ng-bind-html="$ctrl.mainHtml"></p>
