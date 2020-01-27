@@ -3,7 +3,7 @@
 # This file is part of bitbucket-hg-exporter.
 # https://github.com/philipstarkey/bitbucket-hg-exporter
 #
-# bitbucket-hg-exporter is distributed under a custom license.
+# bitbucket-hg-exporter is distributed under the GPLv3.
 # See the LICENSE file in the GitHub repository for further details.
 
 from __future__ import print_function
