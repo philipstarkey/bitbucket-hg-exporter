@@ -1,5 +1,5 @@
-keyring,
-requests,
-questionary,
-python-dateutil,
-colorama,
+keyring
+requests
+questionary
+python-dateutil
+colorama
