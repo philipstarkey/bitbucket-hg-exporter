@@ -26,11 +26,6 @@ jobs:
         run: |
           python setup.py sdist 
           python setup.py bdist_wheel --universal
-      - name: Run tests
-        run: |
-          python -m pip install matplotlib
-          python -m pip install --no-index --find-links=dist monashspa
-          python -m monashspa.tests
       - name: Publish package to test PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
