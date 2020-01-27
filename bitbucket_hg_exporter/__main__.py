@@ -886,7 +886,7 @@ class MigrationProject(object):
 
             # Upload issues to GitHub if requested (using rewritten URLs/changesets)
             # URL to get last existing issue number: https://api.github.com/search/issues?q=repo:philipstarkey/qtutils+sort:author-date-desc&sort=created&order=desc
-            if self.__settings['import_to_github'] and not self.__settings['github_issue_import_complete']:
+            if self.__settings['import_to_github'] and self.__settings['github_import_issues'] and not self.__settings['github_issue_import_complete']:
                 print('Performing dry run of GitHub issue import')
                 for repository in self.__settings['bb_repositories_to_export']: 
                     bb_repo = repository['full_name']
