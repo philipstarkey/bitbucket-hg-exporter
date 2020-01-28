@@ -71,6 +71,12 @@ You can specify a mapping between BitBucket and GitHub accounts. This will be us
 
 **It is not used for commit attribution in the migrated GitHub repository**. You will need to do this by hand, prior to pushing any new commits to the repository. GitHub will email you the URL you can use to specify this mapping (through the GitHub web interface) but it will be `<github repo url>/import/authors`
 
+### I have a large number of repositories to backup. How do I work around the BitBucket API rate limit?
+This tool allows you to specify multiple BitBucket accounts in order to work around the tiny API rate limit that Atlassian impose.
+However, it's only useful to do this if you have multiple repositories you are backing up.
+The list of repositories is split amongst the accounts provided in order to not split the API download for a given repository across multiple accounts (which could result in discontinuities between files or URLs containing a "context" failing because that context is assigned to another user).
+Please make sure that all of your accounts have the same access permissions to the repositories as the primary account you give to this tool.
+
 ### I don't want to import to GitHub, do I need to?
 Nope. This tool is quite happy just downloading everything locally and you can do what you want with it. It will even generate the HTML archive for you to publish somewhere else if that's what you want to do.
 
