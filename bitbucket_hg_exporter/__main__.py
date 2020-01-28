@@ -64,7 +64,7 @@ def bb_query_api(endpoint, auth, params=None):
                 retry_count += 1
                 if retry_count%5 == 4:
                     mins_wait = retry_count//5 + 1
-                    print('BitBucket API limit likely exceeded. Will retry in {} mins...'.format(mins_wait))
+                    print('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait))
                     time.sleep(60*mins_wait)
                 else:
                     time.sleep(5)
@@ -74,7 +74,7 @@ def bb_query_api(endpoint, auth, params=None):
             retry_count += 1
             if retry_count%5 == 4:
                 mins_wait = retry_count//5 + 1
-                print('BitBucket API limit likely exceeded. Will retry in {} mins...'.format(mins_wait))
+                print('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait))
                 time.sleep(60*mins_wait)
             else:
                 time.sleep(5)
@@ -396,13 +396,13 @@ class MigrationProject(object):
                 for i, repository in enumerate(needs_processing):
                     subset[i%len(auth_list)].append(repository['full_name'])
 
-                def thread_fn(i, message_queue):
-                    exporter = BitBucketExport(owner, auth, copy.deepcopy(self.__settings), lambda cmd, message, i=i, q=message_queue:message_queue.put((i,cmd,message)), subset=subset[i])
+                def thread_fn(i, message_queue, credentials):
+                    exporter = BitBucketExport(owner, credentials, copy.deepcopy(self.__settings), lambda cmd, message, i=i, q=message_queue:message_queue.put((i,cmd,message)), subset=subset[i])
                     exporter.backup_api()
                     message_queue.put((i, 'finished', ''))
 
                 for i, credentials in enumerate(auth_list):
-                    t = threading.Thread(target=thread_fn, args=(i, message_queue))
+                    t = threading.Thread(target=thread_fn, args=(i, message_queue, credentials))
                     t.daemon = True
                     t.start()
                     threads[i] = t
@@ -421,8 +421,8 @@ class MigrationProject(object):
                                 force = message[2]
 
                             if message[1] == '\n':
-                                print("Thread {}: {}".format(i, message[0]))
-                                overwrite_last_lines = False
+                                print("Thread {} ({}): {}".format(i, auth_list[i][0], message[0]))
+                                # overwrite_last_lines = False
                                 force = True
                             else:
                                 latest_messages[i] = message[0]
@@ -434,7 +434,7 @@ class MigrationProject(object):
 
                     if time.time() - last_update_time > 0.25 or force:
                         last_update_time = time.time()
-                        pm = '\n'.join(["Thread {}: {}".format(i, m) for i,m in enumerate(latest_messages)])
+                        pm = '\n'.join(["Thread {} ({}): {}".format(i, auth_list[i][0], m) for i,m in enumerate(latest_messages)])
                         end = '\n'
                         if overwrite_last_lines and threads:
                             pm += '\x1b[%d;%dH'%(shutil.get_terminal_size()[1]-len(auth_list)+1, 1) #+ pm
