@@ -26,7 +26,9 @@ If you are an individual, non-profit, or using this tool for an open source proj
 ## Installation
 You need to install Python 3.7+ (or a python virtual environment with Python 3.7+). I recommend [Anaconda Python](https://www.anaconda.com/distribution/#download-section) if you are new to Python.
 
-Then from your terminal (or Anacondaa Prompt on windows if using Anaconda Python) run: `pip install bitbucket_hg_exporter`
+You also need to make sure mercurial (`hg`) and `git` executables are available in your path. If you're unsure, open a terminal and type those commands to see if they are available. If they are not, install them. Note, git is strictly only needed if you are importing to GitHub.
+
+Then from your terminal (or Anaconda Prompt on windows if using Anaconda Python) run: `pip install bitbucket_hg_exporter`
 
 To upgrade to new versions, run: `pip install -U bitbucket_hg_exporter`
 
