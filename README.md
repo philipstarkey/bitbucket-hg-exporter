@@ -44,6 +44,12 @@ There are also a couple of command line options that can help speed things up. I
 3. `--project-name <your project name>` which skips the project selection and uses the saved project specified. This requires the use of `--load` and `--storage-dir` and the project must exist inside the specified storage directory.
 
 ## FAQ
+### Does this tool leak any private data?
+Because we're downloading the BitBucket API for your repository using credentials you supply, anything those credentials can see will be made public if you publish it to GitHub.
+This may include things you thought were deleted (like comments). If this concerns you, consider using the tool to just create a local backup. You can then review the content and publish it by hand (or to a private website).
+
+As this tool is only in the alpha stage of development (and will likely stay like that for the entire life of the project) there may be other bugs that leak private data. Hopefully there are not, but you use this at your own risk. This tool is primarily aimed at open source projects where there is limited private data to leak, none of which should be in the mercurial repository or accessible through the (authenticated) bitbucket API. If you do have private data which is accessible through one of those mechanisms, you should explicitly check that this tool will not make it publicly accessible and take any steps necessary to protect your data.
+
 ### Does this tool do everything for me or do I have to do some things by hand?
 Unfortunately, there is no easy programmatic way to initialise the GitHub wiki repository. So while this tool saves a copy of your BitBucket wiki repos locally on your PC, it does not publish it to GitHub.
 

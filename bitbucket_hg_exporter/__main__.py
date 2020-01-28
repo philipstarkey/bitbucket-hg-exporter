@@ -362,6 +362,10 @@ class MigrationProject(object):
         response = q.select("What would you like to do?", choices=choices.keys()).ask()
         if choices[response] == 0:
             
+            faq_read = q.confirm("I have read the entire readme at https://github.com/philipstarkey/bitbucket-hg-exporter (including the FAQ) and understood the caveats listed. I understand that I use this tool at my own risk. Answer 'Y' for agree or 'N' to terminate the program:", default=False).ask()
+            if not faq_read:
+                sys.exit(1)
+
             # load the user mapping
             if self.__settings['github_user_mapping_path']:
                 while True:
