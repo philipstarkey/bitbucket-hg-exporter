@@ -35,6 +35,46 @@ from .issue_migrate import import_issues_to_github
 bitbucket_api_url = 'https://api.bitbucket.org/2.0/'
 github_api_url = 'https://api.github.com/'
 
+
+def pad_message(msg):
+    width = shutil.get_terminal_size()[0]
+    msg += " "*(width-len(msg)%width-1)
+    return msg
+
+# setup signal handling to terminate threads nicely when
+# this process is terminated
+import signal
+ABORT_EVENT = threading.Event()
+_REGISTERED_THREADS = {}
+_previous_sigint = signal.getsignal(signal.SIGINT)
+_previous_sigterm = signal.getsignal(signal.SIGTERM)
+# _previous_sigkill = signal.getsignal(signal.SIGKILL)
+def _kill_threads_nicely(signum, frame):
+    print(pad_message('Signal received. Attempting to end threads nicely (this may take up to 2 seconds per thread)'))
+    ABORT_EVENT.set()
+    # Wait for threads to end with a timeout...
+    for name, thread in _REGISTERED_THREADS.items():
+        if thread.is_alive():
+            thread.join(2)
+            if thread.is_alive():
+                print(pad_message('WARNING: Thread {} did not terminate nicely'.format(name)))
+            else:
+                print(pad_message('Thread {} ended nicely'.format(name)))
+                
+
+    if signum == signal.SIGINT and _previous_sigint not in [None, signal.SIG_IGN, signal.SIG_DFL]:
+        _previous_sigint(signum, frame)
+    if signum == signal.SIGTERM and _previous_sigterm not in [None, signal.SIG_IGN, signal.SIG_DFL]:
+        _previous_sigterm(signum, frame)
+    # if signum == signal.SIGKILL and _previous_sigkill not in [None, signal.SIG_IGN, signal.SIG_DFL]:
+        # _previous_sigkill(signum, frame)
+        
+    # force terminate
+    os._exit(1) 
+        
+signal.signal(signal.SIGINT, _kill_threads_nicely)
+signal.signal(signal.SIGTERM, _kill_threads_nicely)
+
 def bb_endpoint_to_full_url(endpoint):
     return bitbucket_api_url + endpoint
 
@@ -64,7 +104,8 @@ def bb_query_api(endpoint, auth, params=None):
                 retry_count += 1
                 if retry_count%5 == 4:
                     mins_wait = retry_count//5 + 1
-                    print('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait))
+                    print(pad_message('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait)))
+                    # TODO: make this a sleep(1) in a loop that checks elapsed time, so that PC hibernate negates the sleep
                     time.sleep(60*mins_wait)
                 else:
                     time.sleep(5)
@@ -74,15 +115,19 @@ def bb_query_api(endpoint, auth, params=None):
             retry_count += 1
             if retry_count%5 == 4:
                 mins_wait = retry_count//5 + 1
-                print('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait))
+                print(pad_message('({}) BitBucket API limit likely exceeded. Will retry in {} mins...'.format(auth[0], mins_wait)))
+                # TODO: make this a sleep(1) in a loop that checks elapsed time, so that PC hibernate negates the sleep
                 time.sleep(60*mins_wait)
             else:
                 time.sleep(5)
-            time.sleep(60*5)
             continue
         except BaseException:
             # retry = False
             raise
+
+    if ABORT_EVENT.is_set():
+        raise RuntimeError('Raising exception so that the thread ends sooner')
+
     return response
 
 def bbapi_json(endpoint, auth, params=None):
@@ -267,7 +312,7 @@ class MigrationProject(object):
         # find out what we should be saving
         self.__get_backup_options()
 
-        # TODO: questions about import to GitHub
+        # questions about import to GitHub
         self.__get_github_import_options()
 
         self.__confirm_project_settings()
@@ -404,6 +449,7 @@ class MigrationProject(object):
                 for i, credentials in enumerate(auth_list):
                     t = threading.Thread(target=thread_fn, args=(i, message_queue, credentials))
                     t.daemon = True
+                    _REGISTERED_THREADS["Thread {} ({})".format(i, credentials[0])] = t
                     t.start()
                     threads[i] = t
 
@@ -421,7 +467,7 @@ class MigrationProject(object):
                                 force = message[2]
 
                             if message[1] == '\n':
-                                print("Thread {} ({}): {}".format(i, auth_list[i][0], message[0]))
+                                print(pad_message("Thread {} ({}): {}".format(i, auth_list[i][0], message[0])))
                                 # overwrite_last_lines = False
                                 force = True
                             else:
@@ -431,13 +477,17 @@ class MigrationProject(object):
                             self.__save_project_settings()
                         elif cmd == 'finished':
                             del threads[i]
+                            force = True
 
                     if time.time() - last_update_time > 0.25 or force:
                         last_update_time = time.time()
-                        pm = '\n'.join(["Thread {} ({}): {}".format(i, auth_list[i][0], m) for i,m in enumerate(latest_messages)])
+                        pm = '\n'.join([pad_message("Thread {} ({}): {}".format(i, auth_list[i][0], m)) for i,m in enumerate(latest_messages)])
                         end = '\n'
                         if overwrite_last_lines and threads:
-                            pm += '\x1b[%d;%dH'%(shutil.get_terminal_size()[1]-len(auth_list)+1, 1) #+ pm
+                            # calculate number of links to move up
+                            # lines = len(auth_list)
+                            lines = (len(pm)+1)//shutil.get_terminal_size()[0]
+                            pm += '\x1b[%d;%dH'%(shutil.get_terminal_size()[1]-lines+1, 1) #+ pm
                             end = ''
                         print(pm, end=end)
                         overwrite_last_lines = True
@@ -580,8 +630,8 @@ class MigrationProject(object):
                         params = {
                             "vcs": "mercurial",
                             "vcs_url": clone_url,
-                            # "vcs_username": "octocat",
-                            # "vcs_password": "secret"
+                            # "vcs_username": auth[0],
+                            # "vcs_password": auth[1]
                         }
                         response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
                         if response.status_code != 201:
@@ -644,7 +694,6 @@ class MigrationProject(object):
                     github_data['repository'] = response.json()
                     self.__save_project_settings()
 
-                    # TODO: clone forks too!
                     # TODO: use password from github keyring?
                     clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
                     clone_url =  github_data['repository']['clone_url']
@@ -675,7 +724,6 @@ class MigrationProject(object):
                             continue
 
                     # create the mapping
-                    # TODO: add the correct URLS as arguments to BbToGh()
                     archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name'])
                     archive_url += '#!/'+repository['full_name']
                     mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], repository['links']['html']['href'], self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url'], self.__settings['bb_gh_user_mapping'], archive_url=archive_url)
@@ -1185,7 +1233,6 @@ class MigrationProject(object):
             self.__settings['github_owner'] = q.text('Enter the GitHub user or organisation that will own the new repositories?', default=self.__settings['github_owner']).ask()
             # Get list of GitHub repositories
             if choices[response] == 1:
-                # TODO: write this
                 while not self.__get_github_repositories():
                     pass
 
@@ -1462,10 +1509,24 @@ class BitBucketExport(object):
             self.__time_of_last_update = time.time()-1
             self.__print_update()
             self.__backup_api()
+            if ABORT_EVENT.is_set():
+                return
             self.__print_update(end="\n", force=True)
             # clear the dummy response cache as we don't need it one we finish with a repository
             self.__dummy_response_cache = {}
-            self.make_urls_relative(mapping=mapping)
+
+            self.url_queue = queue.Queue()
+            self.url_queue.put({'mapping':mapping})
+            rewrite_count = 0
+            # rewrite URLs in all files
+            while not self.url_queue.empty() and not ABORT_EVENT.is_set():
+                data = self.url_queue.get()
+                self.make_urls_relative(**data)
+                rewrite_count += 1
+                self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {count} files rewritten'.format(repo=self.__repo_full_name, count=rewrite_count), "\r"))
+            # self.make_urls_relative(mapping=mapping)
+            if ABORT_EVENT.is_set():
+                return
             self.__post_message('complete', repository['full_name'])
             # reset the tree
             self.__tree = []
@@ -1661,11 +1722,10 @@ class BitBucketExport(object):
         self.url_queue.put(('https://api.bitbucket.org/2.0/repositories/{owner}/{repo}'.format(owner=self.__owner, repo=self.__repository), self.__tree))
 
         # Backup everything
-        while not self.url_queue.empty():
+        while not self.url_queue.empty() and not ABORT_EVENT.is_set():
             url, tree = self.url_queue.get()
             self.get_and_save_json(url, ignore_rules + pr_ignores, rewrite_rules, tree)
         self.tree_increment_level()
-        # self.make_urls_relative()
 
     @property
     def current_tree_location(self):
@@ -1673,8 +1733,6 @@ class BitBucketExport(object):
 
     @current_tree_location.setter
     def current_tree_location(self, value):
-        # TODO: write this to a file along with the tree
-        #       so we can resume it if it fails part way through
         self.__current_tree_location = value
 
     def tree_new_level(self):
@@ -1748,9 +1806,14 @@ class BitBucketExport(object):
 
         # don't download if it is already downloaded
         if os.path.exists(save_path):
+            response = DummyResponse(save_path, self.__dummy_response_cache)
+            if response.already_processed:
+                self.__duplicates_skipped += 1
+            else:
+                self.__already_downloaded += 1
             # mark as already processed
             tree[-1]['already_processed'] = True
-            self.__already_downloaded += 1
+            # self.__already_downloaded += 1
             self.__print_update()
             return
 
@@ -1766,12 +1829,12 @@ class BitBucketExport(object):
             for chunk in r.iter_content(1024**2): # 1Mb chunk size
                 fd.write(chunk)
 
+        DummyResponse(save_path, self.__dummy_response_cache)
+
         self.__files_downloaded += 1
         self.__print_update()
 
     def get_and_save_json(self, base_url, ignore_rules, rewrite_rules, tree):
-        # TODO: handle resume from partial download 
-
         endpoint, params = full_url_to_query(base_url)
         endpoint = endpoint.replace(bitbucket_api_url, '')
         endpoint = endpoint.split('?')[0]
@@ -1938,7 +2001,7 @@ class BitBucketExport(object):
         if tree is None:
             tree = self.__tree
             top_level = True
-            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
+            # self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
             # print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
         if len(tree):
             parent_percent_subset = parent_percent_subset/len(tree)
@@ -2002,13 +2065,19 @@ class BitBucketExport(object):
                     shutil.copyfile(item['endpoint_path'], new_path)
 
             # recurse over children
-            self.make_urls_relative(item['children'], parent_percent=parent_percent, parent_percent_subset=parent_percent_subset, mapping=mapping)
+            self.url_queue.put({
+                'tree': item['children'],
+                'mapping': mapping,
+                'parent_percent': parent_percent, 
+                'parent_percent_subset': parent_percent_subset,
+            })
+            # self.make_urls_relative(item['children'], parent_percent=parent_percent, parent_percent_subset=parent_percent_subset, mapping=mapping)
             parent_percent += parent_percent_subset
-            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
+            # self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {pcnt:.1f}% complete'.format(repo=self.__repo_full_name, pcnt=parent_percent), "\r"))
             # print('Rewriting URLs in downloaded API data: {:.1f}% complete'.format(parent_percent), end="\r")
 
-        if top_level:
-            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: 100.0% complete'.format(repo=self.__repo_full_name), "\n"))
+        # if top_level:
+        #     self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: 100.0% complete'.format(repo=self.__repo_full_name), "\n"))
             # print('Rewriting URLs in downloaded API data: 100.0% complete')
 
     def fix_stupid_bitbucket_urls(self, matchobj):

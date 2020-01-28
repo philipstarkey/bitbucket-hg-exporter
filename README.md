@@ -73,7 +73,9 @@ Links between repositories exported/imported as part of the same project (the bi
 Yes, you can still generate the BitBucket archive pages and link to your existing GitHub project. The command line wizard will prompt you to specify the URL(s) for any repositories already migrated to GitHub. You might not want to import the issues to GitHub if you've already had new issues or pull-requests made, but the old issues will still be visible in the archive if you choose to publish it to GitHub pages.
 
 ### Do you support private repositories?
-This should handle them correctly, and keep them private on GitHub. This hasn't been extensively tested though so you should absolutely check all permissions by hand after migration. I cannot be held responsible if use of this tool results in proprietary code leaking into the wild, and any consequences this may have to you or your employer.
+This should handle them correctly, and keep them private on GitHub. Right now the functionality is disabled, but you can find the place to enable it in the source code by searching for "vcs_username". The reason it is disabled is because it requires giving access credentials for BitBucket to GitHub (which some people may not like). Because it is disabled, the functionality hasn't been extensively tested though so you should absolutely check all permissions by hand after migration. I cannot be held responsible if use of this tool results in proprietary code leaking into the wild, and any consequences this may have to you or your employer.
+
+I will eventually turn on the functionality by default, but it requires working out whether a repository is private and prompting the user to confirm it's OK to submit the credentials to GitHub. I just haven't had time to implement that yet, and if you feel like doing it for me I'll happily accept a pull request for it!
 
 ### How does this differ from existing migration tools?
 Nothing I am aware of will migrate the repository, or archive pull-requests and commit comments in HTML pages.
