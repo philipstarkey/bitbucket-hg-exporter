@@ -1531,6 +1531,7 @@ class BitBucketExport(object):
             # self.make_urls_relative(mapping=mapping)
             if ABORT_EVENT.is_set():
                 return
+            self.__post_message('update', ('{repo}: Rewriting URLs in downloaded API data: {count} files rewritten'.format(repo=self.__repo_full_name, count=rewrite_count), "\n"))
             self.__post_message('complete', repository['full_name'])
             # reset the tree
             self.__tree = []
