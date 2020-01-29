@@ -184,15 +184,18 @@ def __get_items_from_file(start_file, options):
         try:
             with open(os.path.join(repo_base, file_path), 'r') as f:
                 data = json.load(f)
-                for item in data['values']:
-                    yield item
+            for item in data['values']:
+                yield item
 
-                if 'next' in data:
-                    file_path = data['next']
-                else:
-                    more = False
+            if 'next' in data:
+                file_path = data['next']
+            else:
+                more = False
         except FileNotFoundError:
             return
+        except BaseException:
+            print('Error while loading file {}'.format(os.path.join(repo_base, file_path)))
+            raise
 
 def convert_issue(issue, comments, changes, options, attachments, gh_milestones):
     """

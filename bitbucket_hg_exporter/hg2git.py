@@ -108,7 +108,7 @@ class BbToGh(object):
                 #logger.warning('duplicates "%s"\n %r', date, key_to_hg[key])
                 pass
             self.hg_to_git[node] = None
-            self.hg_revnum_to_hg_node[hg_log["revnum"]] = node
+            self.hg_revnum_to_hg_node[int(hg_log["revnum"])] = node
 
         for git_log in git_logs:
             date = dateutil.parser.parse(git_log["date"])
@@ -136,14 +136,14 @@ class BbToGh(object):
             return None
         full_node = self.find_hg_node(hg_node)
         if full_node is None:
-            if hg_node.isdigit():
+            if hg_node.isdigit() and int(hg_node) in self.hg_revnum_to_hg_node:
                 hg_node = self.hg_revnum_to_hg_node[int(hg_node)]
                 full_node = self.find_hg_node(hg_node)
         if full_node is None:
             #logger.warning("hg node %s is not found in hg log", hg_node)
             return None
 
-        git_hash = self.hg_to_git[full_node]
+        git_hash = self.hg_to_git.get(full_node, None)
         if git_hash is None:
             #logger.warning(
             #     'hg node %s "%s" is not found in git log',

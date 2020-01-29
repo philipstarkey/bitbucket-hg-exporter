@@ -3,3 +3,4 @@ requests
 questionary
 python-dateutil
 colorama
+cffi

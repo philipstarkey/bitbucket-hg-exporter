@@ -244,7 +244,11 @@ class MigrationProject(object):
             'github_existing_repositories': {},
 
             # 'github_import_complete': False,
+            'github_git_download_complete': False,
             'github_issue_import_complete': False,
+
+            'reorder_comments_complete': False,
+            'hash_link_complete': False,
         }
 
         p = argparse.ArgumentParser()
@@ -500,7 +504,11 @@ class MigrationProject(object):
                 self.__save_project_settings()
                 colorama.deinit()
 
-            # clone the Hg repos (including forks if specified)
+            # clone the Hg repos (including forks if specified)            
+            do_hg_pull = True
+            if self.__settings['bitbucket_hg_download_complete']:
+                do_hg_pull = q.confirm("hg repositories were pulled during a previous run of this script. Do you want to update them?", default=False).ask()
+
             logs = {}
             for repository in self.__settings['bb_repositories_to_export']:
                 # TODO: use password from mercurial_keyring (which I think means saving an additional keyring entry with
@@ -527,7 +535,7 @@ class MigrationProject(object):
                         if p.returncode:
                             print('Failed to hg clone {}'.format(clone_url))
                             sys.exit(0)
-                    else:
+                    elif do_hg_pull:
                         p=subprocess.Popen(['hg', 'pull', '-R', clone_dest])
                         p.communicate()
                         if p.returncode:
@@ -536,6 +544,9 @@ class MigrationProject(object):
 
                 # Generate mapping for rewriting changesets and other items
                 logs[repository['full_name']] = {'hg': hg2git.get_hg_log(clone_dests[0][0])}
+
+            self.__settings['bitbucket_hg_download_complete'] = True
+            self.__save_project_settings()
 
             github_auth = ('', '') # empty values. Will be filled in if we are actually using GitHub (see a few lines below)
             github_headers = {"Accept": "application/vnd.github.barred-rock-preview"}
@@ -562,7 +573,19 @@ class MigrationProject(object):
                         if 'is_fork' in repository and repository['is_fork']:
                             continue
 
-                    if repository['full_name'] not in self.__settings['github_existing_repositories'] or not self.__settings['github_existing_repositories'][repository['full_name']]['import_started']:
+                    # update status if we are in an error condition as this determines whether we should try again and we need to make sure we are not working from stale data
+                    if repository['full_name'] in self.__settings['github_existing_repositories'] and self.__settings['github_existing_repositories'][repository['full_name']]['import_started'] and 'import_status' in self.__settings['github_existing_repositories'][repository['full_name']] and self.__settings['github_existing_repositories'][repository['full_name']]['import_status']['status'] == 'error':
+                        import_status_check = requests.get(self.__settings['github_existing_repositories'][repository['full_name']]['import_url'], auth=github_auth, headers=github_headers)
+                        if import_status_check.status_code == 200:
+                            self.__settings['github_existing_repositories'][repository['full_name']]['import_status'] = import_status_check.json()
+                        else:
+                            pass
+                            # handle this nicely
+                    main_condition = repository['full_name'] not in self.__settings['github_existing_repositories'] or not self.__settings['github_existing_repositories'][repository['full_name']]['import_started']
+                    error_condition = False
+                    if not main_condition:
+                        error_condition = ('import_status' in self.__settings['github_existing_repositories'][repository['full_name']] and self.__settings['github_existing_repositories'][repository['full_name']]['import_status']['status'] == 'error' and self.__settings['github_existing_repositories'][repository['full_name']]['import_status'].get("message", '') != "The imported repository is empty.")
+                    if main_condition or error_condition:
                         clone_url = None
                         for clone_link in repository['links']['clone']:
                             if clone_link['name'] == 'https':
@@ -579,12 +602,14 @@ class MigrationProject(object):
                             if 'parent' in repository and 'full_name' in repository['parent']:
                                 github_slug += '--forked-from--'+repository['parent']['full_name'].replace('/', '-')
 
+                        # TODO: cap repo name length to 100 chars
+                        github_slug = github_slug[:100]
 
                         # Need to create the repository first! This should allow us to make it private! Yay!
                         # check if repository already exists
                         if repository['full_name'] not in self.__settings['github_existing_repositories']:
                             status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=github_slug), github_auth)
-                            if status != 200:
+                            if status != 200 or (status == 200 and response['name'] != github_slug):
                                 # find out if owner is a user or org
                                 is_org = False
                                 status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
@@ -594,7 +619,7 @@ class MigrationProject(object):
 
                                 repo_data = {
                                     "name": github_slug,
-                                    "description": repository['description'],
+                                    "description": repository['description'].replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' '),
                                     "private": repository['is_private'],
                                     "has_wiki": repository['has_wiki'],
                                     "has_issues": repository['has_issues'],
@@ -602,6 +627,7 @@ class MigrationProject(object):
                                 }
                                 if repository['website']:
                                     repo_data['homepage'] = repository['website']
+                                print('Creating repository {}/{}'.format(self.__settings['github_owner'], github_slug))
                                 if is_org:
                                     response = requests.post(
                                         'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
@@ -628,6 +654,14 @@ class MigrationProject(object):
                             }
                             self.__save_project_settings()
 
+                        # cancel any error requests
+                        if error_condition:
+                            print('Cancelling import for repository {owner}/{repo_name}) as it was in an error state. We will re-request the import shortly.'.format(owner=self.__settings['github_owner'], repo_name=github_slug))
+                            response = requests.delete('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers)
+                            if response.status_code != 204:
+                                print('WARNING: Failed to cancel import with error state (repository: {owner}/{repo_name}). We suggest visiting github.com/{owner}/{repo_name} and attempting to restart the import from there.'.format(owner=self.__settings['github_owner'], repo_name=github_slug))
+                                continue
+                        
                         # generate import request to GitHub
                         # TODO: Make this work for private repositories
                         #       Need to confirm with user that they are happy for their BitBucket credentials to be given to GitHub
@@ -637,6 +671,7 @@ class MigrationProject(object):
                             # "vcs_username": auth[0],
                             # "vcs_password": auth[1]
                         }
+                        print('Requesting source import for repository {}/{}'.format(self.__settings['github_owner'], github_slug))
                         response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
                         if response.status_code != 201:
                             print('Failed to import BitBucket repository {} to GitHub. Response code was: {}'.format(repository['full_name'], response.status_code))
@@ -670,7 +705,8 @@ class MigrationProject(object):
                                 print('Failed to check status of import to {}. Will try again next loop.'.format(github_data['name']))
                                 continue
                             github_data['import_status'] = response.json()
-                            if github_data['import_status']['status'] != 'complete':
+                            empty_repo = (github_data['import_status']['status'] == 'error' and github_data['import_status'].get("message", '') == "The imported repository is empty.")
+                            if github_data['import_status']['status'] != 'complete' and not empty_repo:
                                 print('Waiting on {} to complete. Current status is: {}'.format(github_data['name'],github_data['import_status']['status_text']))
                                 all_finished = False
                             else:
@@ -681,6 +717,10 @@ class MigrationProject(object):
                         time.sleep(30)
 
                 # TODO: send user mappings
+
+                do_git_pull = True
+                if self.__settings['github_git_download_complete']:
+                    do_git_pull = q.confirm("git repositories were pulled during a previous run of this script. Do you want to update them?", default=False).ask()
 
                 # clone the Github repos if needed
                 for repository in self.__settings['bb_repositories_to_export']:
@@ -701,22 +741,28 @@ class MigrationProject(object):
                     # TODO: use password from github keyring?
                     clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
                     clone_url =  github_data['repository']['clone_url']
-                    if not os.path.exists(os.path.join(clone_dest, '.git', 'index')):
+                    if not os.path.exists(os.path.join(clone_dest, '.git', 'config')):
                         p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
                         p.communicate()
                         if p.returncode:
                             print('Failed to git clone {}'.format(clone_url))
                             sys.exit(0)
-                    else:
+                    elif do_git_pull:
                         p=subprocess.Popen(['git', 'pull', clone_url], cwd=clone_dest)
                         p.communicate()
                         if p.returncode:
                             print('Failed to git update (pull) from {}'.format(clone_url))
-                            sys.exit(0)
+                            if os.path.exists(os.path.join(clone_dest, '.git', 'index')):
+                                sys.exit(0)
+                            else:
+                                print('This is probably because the repository is empty? We\'ll try and continue...')
 
 
                     # Generate mapping for rewriting changesets and other items
                     logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
+
+                self.__settings['github_git_download_complete'] = True
+                self.__save_project_settings()
 
             mapping = {}
             if self.__settings['import_to_github']:
@@ -806,99 +852,107 @@ class MigrationProject(object):
             # reprocess:
             #   * PR comments so they are in a useful order
             print('Reordering comments...')
-            for repository in self.__settings['bb_repositories_to_export']:
-                # open repo.json file, find location of pull requests list
-                pull_request_path = None
-                repo_data = top_level_repo_data[repository['full_name']]
-                if "links" in repo_data and "pullrequests" in repo_data['links'] and 'href' in repo_data['links']['pullrequests']:
-                    pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
+            
+            if not self.__settings['reorder_comments_complete']:
+                for repository in self.__settings['bb_repositories_to_export']:
+                    # open repo.json file, find location of pull requests list
+                    pull_request_path = None
+                    repo_data = top_level_repo_data[repository['full_name']]
+                    if "links" in repo_data and "pullrequests" in repo_data['links'] and 'href' in repo_data['links']['pullrequests']:
+                        pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['pullrequests']['href'].split('/'))
 
-                # open that file, iterate over each pull requests, and find links to comments
-                comment_paths = []
-                while pull_request_path is not None:
-                    with open(pull_request_path, 'r') as f:
-                        pull_requests_data = json.load(f)
-                        for pull_request in pull_requests_data['values']:
-                            if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
-                                comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
-                        if "next" in pull_requests_data:
-                            pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
-                        else:
-                            pull_request_path = None
-
-                # find location of commit list
-                if "links" in repo_data and "commits" in repo_data['links'] and 'href' in repo_data['links']['commits']:
-                    pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['commits']['href'].split('/'))
-
-                # open that file, iterate over each commit, and find links to comments
-                # TODO: rename variables
-                comment_paths = []
-                while pull_request_path is not None:
-                    with open(pull_request_path, 'r') as f:
-                        pull_requests_data = json.load(f)
-                        for pull_request in pull_requests_data['values']:
-                            if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
-                                comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
-                        if "next" in pull_requests_data:
-                            pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
-                        else:
-                            pull_request_path = None
-
-                # Note this code now handles both pull requests and commit comments (despite the variable names)
-                for pull_request_file in comment_paths:
-                    comment_files = [pull_request_file]
-                    comments = []
-                    # Load all comments into RAM, then recursively iterate finding all the ones that have no parent, then all children of the top level, then children of that level, etc. etc. until all comments are placed into a hierarchy. 
-                    while pull_request_file:
-                        with open(pull_request_file, 'r') as f:
-                            comment_data = json.load(f)
-                            if 'values' in comment_data:
-                                comments.extend(comment_data['values'])
-
-                            if 'next' in comment_data:
-                                pull_request_file = comment_data['next']
-                                comment_files.append(pull_request_file)
+                    # open that file, iterate over each pull requests, and find links to comments
+                    comment_paths = []
+                    while pull_request_path is not None:
+                        with open(pull_request_path, 'r') as f:
+                            pull_requests_data = json.load(f)
+                            for pull_request in pull_requests_data['values']:
+                                if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
+                                    comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
+                            if "next" in pull_requests_data:
+                                pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
                             else:
-                                pull_request_file = None
+                                pull_request_path = None
 
-                    done_idxs = []
-                    comment_flat = {}
-                    comment_hierarchy = OrderedDict()
-                    while len(done_idxs) < len(comments):
-                        for i, comment in enumerate(comments):
-                            if i in done_idxs:
-                                continue
-                            found_parent = False
-                            if "parent" not in comment:
-                                parent = comment_hierarchy
-                                found_parent = True
-                            elif comment['parent']['id'] in comment_flat:
-                                parent = comment_flat[comment['parent']['id']]['children']
-                                found_parent = True
+                    # find location of commit list
+                    if "links" in repo_data and "commits" in repo_data['links'] and 'href' in repo_data['links']['commits']:
+                        pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages', *repo_data['links']['commits']['href'].split('/'))
 
-                            if found_parent:
-                                done_idxs.append(i)
-                                d = {
-                                    'children': OrderedDict(),
-                                    'index': i,
-                                }
-                                parent[comment['id']] = d
-                                comment_flat[comment['id']] = d
-                    
-                    # Then flatten, split into chunks
-                    reordered_comments = flatten_comments(comment_hierarchy, comments, [])
-                    for i, pull_request_file in enumerate(comment_files):
-                        with open(pull_request_file, 'r') as f:
-                            comment_data = json.load(f)
-                            comment_data['values'] = reordered_comments[i*100:(i+1)*100]
-                            if len(reordered_comments) != comment_data['size']:
-                                print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments we are writing does not agree with how many there were before we reordered them. There were {} comments, now {} comments'.format(pull_request_file, comment_data['size'], len(reordered_comments)))
-                        with open(pull_request_file, 'w') as f:
-                            json.dump(comment_data, f)
+                    # open that file, iterate over each commit, and find links to comments
+                    # TODO: rename variables
+                    comment_paths = []
+                    while pull_request_path is not None:
+                        with open(pull_request_path, 'r') as f:
+                            pull_requests_data = json.load(f)
+                            for pull_request in pull_requests_data['values']:
+                                if 'links' in pull_request and 'comments' in pull_request['links'] and 'href' in pull_request['links']['comments']:
+                                    comment_paths.append(os.path.join(self.__settings['project_path'], 'gh-pages', *pull_request['links']['comments']['href'].split('/')))
+                            if "next" in pull_requests_data:
+                                pull_request_path = os.path.join(self.__settings['project_path'], 'gh-pages',  *pull_requests_data['next'].split('/'))
+                            else:
+                                pull_request_path = None
+
+                    # Note this code now handles both pull requests and commit comments (despite the variable names)
+                    for pull_request_file in comment_paths:
+                        comment_files = [pull_request_file]
+                        comments = []
+                        # Load all comments into RAM, then recursively iterate finding all the ones that have no parent, then all children of the top level, then children of that level, etc. etc. until all comments are placed into a hierarchy. 
+                        while pull_request_file:
+                            with open(pull_request_file, 'r') as f:
+                                comment_data = json.load(f)
+                                if 'values' in comment_data:
+                                    comments.extend(comment_data['values'])
+
+                                if 'next' in comment_data:
+                                    pull_request_file = comment_data['next']
+                                    comment_files.append(pull_request_file)
+                                else:
+                                    pull_request_file = None
+
+                        done_idxs = []
+                        comment_flat = {}
+                        comment_hierarchy = OrderedDict()
+                        while len(done_idxs) < len(comments):
+                            for i, comment in enumerate(comments):
+                                if i in done_idxs:
+                                    continue
+                                found_parent = False
+                                if "parent" not in comment:
+                                    parent = comment_hierarchy
+                                    found_parent = True
+                                elif comment['parent']['id'] in comment_flat:
+                                    parent = comment_flat[comment['parent']['id']]['children']
+                                    found_parent = True
+
+                                if found_parent:
+                                    done_idxs.append(i)
+                                    d = {
+                                        'children': OrderedDict(),
+                                        'index': i,
+                                    }
+                                    parent[comment['id']] = d
+                                    comment_flat[comment['id']] = d
+                        
+                        # Then flatten, split into chunks
+                        reordered_comments = flatten_comments(comment_hierarchy, comments, [])
+                        for i, pull_request_file in enumerate(comment_files):
+                            with open(pull_request_file, 'r') as f:
+                                comment_data = json.load(f)
+                                comment_data['values'] = reordered_comments[i*100:(i+1)*100]
+                                if len(reordered_comments) != comment_data['size']:
+                                    print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments we are writing does not agree with how many there were before we reordered them. There were {} comments, now {} comments'.format(pull_request_file, comment_data['size'], len(reordered_comments)))
+                            with open(pull_request_file, 'w') as f:
+                                json.dump(comment_data, f)
+                self.__settings['reorder_comments_complete'] = True
+                self.__save_project_settings()
             print('done!')
 
             # Write out the mapping between mercurial and gitub hashes
-            if self.__settings['import_to_github']:
+            link_hashes = True
+            if self.__settings['import_to_github'] and self.__settings['hash_link_complete']:
+                link_hashes = q.confirm("mercurial and git hashes have already been linked (and tag info obtained) on a previous run. Do you want to refresh this data? (useful if you have updated the local hg/git repos or some commits did not have their hashes linked correctly in a previous run)", default=False).ask()
+
+            if self.__settings['import_to_github'] and link_hashes:
                 print('Linking git and mercurial hashes...')
                 for repository in self.__settings['bb_repositories_to_export']:
                     # skip forks if we are not importing them to github
@@ -919,21 +973,33 @@ class MigrationProject(object):
                     repo_api_path = os.path.join(self.__settings['project_path'], 'gh-pages', 'data', 'repositories', *repository['full_name'].split('/'))
                     for filename in os.listdir(os.path.join(repo_api_path, 'commit')):
                         if filename.endswith('.json'):
-                            with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
-                                data = json.load(f)
-                            with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
-                                # get git hash
+                            try:
+                                with open(os.path.join(repo_api_path, 'commit', filename), 'r') as f:
+                                    data = json.load(f)
+                            except BaseException:
+                                print(repo_api_path, filename)
+                                raise
+                                sys.exit(1)
+                            # get git hash
+                            try:
                                 data['git_hash'] = mapping[repository['full_name']].hgnode_to_githash(data['hash'])
-                                # get tags
-                                data['tags'] = hg_tags[data['hash']] if data['hash'] in hg_tags else None
-                                # get branch(es) (note: hg log command calls this "branches" but I think there is only ever one branch name for a commit)
-                                data['branches'] = 'default'
-                                if data['hash'] in mapping[repository['full_name']].hg_branches and mapping[repository['full_name']].hg_branches[data['hash']]:
-                                    data['branches'] = mapping[repository['full_name']].hg_branches[data['hash']]
+                            except BaseException:
+                                print('Failed to get git hash for BitBucket {} (hash: {})'.format(repository['full_name'], data['hash']))
+                                data['git_hash'] = None
+                            # get tags
+                            data['tags'] = hg_tags[data['hash']] if data['hash'] in hg_tags else None
+                            # get branch(es) (note: hg log command calls this "branches" but I think there is only ever one branch name for a commit)
+                            data['branches'] = 'default'
+                            if data['hash'] in mapping[repository['full_name']].hg_branches and mapping[repository['full_name']].hg_branches[data['hash']]:
+                                data['branches'] = mapping[repository['full_name']].hg_branches[data['hash']]
+                            if data['git_hash'] is None:
+                                print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
+                            
+                            with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
                                 # write out the data
                                 json.dump(data, f)
-                                if data['git_hash'] is None:
-                                    print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
+                self.__settings['hash_link_complete'] = True
+                self.__save_project_settings()
                 print('done!')
 
             # Upload issues to GitHub if requested (using rewritten URLs/changesets)
