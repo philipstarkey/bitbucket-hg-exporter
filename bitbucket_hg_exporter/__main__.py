@@ -2112,7 +2112,8 @@ class BitBucketExport(object):
                         new_url = child['endpoint_path'].replace(self.__save_path, 'data').replace('\\\\', '/').replace('\\','/')
                         data = data.replace('"{}"'.format(child['url']), '"{}"'.format(new_url)) # JSON value
                         data = data.replace(r'\"{}\"'.format(child['url']), r'\"{}\"'.format(new_url)) # escaped HTML image src in JSON
-                        data = data.replace('![]({})'.format(child['url']), '![]({})'.format(new_url)) # markdown image format
+                        # data = data.replace('![]({})'.format(child['url']), '![]({})'.format(new_url)) # markdown image format
+                        data = re.sub(r"\!\[(.*?)\]\("+re.escape(child['url'])+r"\)", r"![\1]("+new_url+r")", data, flags=re.MULTILINE) # markdown image format
 
                     # fix weird URLS that exist which aren't valid api endpoints, but BitBucket puts them in the content...WTF?
                     # data = re.sub(r'\\\"(https\:\/\/api\.bitbucket\.org\/(.*?)\/(.*?)\/(.*?))\\\"', self.fix_stupid_bitbucket_urls, data, flags=re.MULTILINE)
