@@ -1052,15 +1052,15 @@ class MigrationProject(object):
                 p=subprocess.Popen(['git', 'commit', '-m', "Auto commit by bitbucket_hg_exporter at {}".format(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))], cwd=clone_dest)
                 p.communicate()
                 if p.returncode:
-                    print('Failed to commit changes in gh-pages folder')
-                    sys.exit(0)
+                    print('Failed to commit changes in gh-pages folder, ignoring because this was probably because there was nothing to commit.')
+                    # sys.exit(0)
 
                 # Make GitHub repo if needed
                 status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']), github_auth)
                 if status != 200:
                     # find out if owner is a user or org
                     is_org = False
-                    status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
+                    status, response = ghapi_json('users/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
                     if status == 200:
                         if response['type'] != "User":
                             is_org = True
