@@ -89,12 +89,17 @@ class BbToGh(object):
         self.bb_url = bb_url.rstrip("/")
         self.gh_url = gh_url.rstrip("/")
         self.gh_repo = self.gh_url.replace('https://github.com/', '')
+        self.bb_repo = self.bb_url.replace('https://bitbucket.org/', '')
         self.hg_to_git = {}
         self.hg_dates = {}
         self.hg_branches = {}
         self.hg_revnum_to_hg_node = {}
         self.user_mapping = user_mapping
-        self.archive_url = archive_url.rstrip("/") if archive_url is not None else None
+        self.archive_url = None
+        self.base_archive_url = None
+        if archive_url is not None:
+            self.archive_url = archive_url.rstrip("/")
+            self.base_archive_url = archive_url.split('#')[0].rstrip("/")
         key_to_hg = {}
 
         for hg_log in hg_logs:
@@ -155,6 +160,17 @@ class BbToGh(object):
         return git_hash
 
     def convert_all(self, content):
+        # make relative data links absolute
+        urls = [
+            'data/bitbucket.org/',
+            'data/bytebucket.org/',
+            'data/pf-emoji-service--cdn.us-east-1.prod.public.atl-paas.net/',
+            'data/secure.gravatar.com/'
+        ]
+        if self.archive_url is not None:
+            for url in urls:
+                content = content.replace(url, '{}/{}'.format(self.base_archive_url, url))
+
         content = self.normalize_bb_url(content)
         content = self.convert_cset_marker(content)
         content = self.convert_bb_cset_link(content)
@@ -213,7 +229,10 @@ class BbToGh(object):
                 git_hash = self.hgnode_to_githash(hg_node)
                 # only replace the URL if the hash was found in this repo
                 if git_hash is not None:
-                    return git_hash
+                    repo = ""
+                    if git_repo_prefix:
+                        repo = self.gh_repo + "@"
+                    return repo+git_hash
                 else:
                     return matchobj.group(0)
             # else we ignore it. If the URL is pointing to a changeset, then it will be picked up by 
@@ -277,6 +296,13 @@ class BbToGh(object):
         return content
 
     def normalize_bb_url(self, content):
+        # convert back the relative links to archive template
+        # (this will be returned to the non-relative archive link in replace_bb_url_with_archive())
+        content = content.replace("#!/{}".format(self.bb_repo), 'https://bitbucket.org/{}'.format(self.bb_repo))
+        if self.archive_url is not None:
+            # convert relative data links to the archive URL
+            content = content.replace("data/repositories/{}/".format(self.bb_repo), '{}/data/repositories/{}/'.format(self.base_archive_url, self.bb_repo))
+
         content = content.replace("http://www.bitbucket.org/", "https://bitbucket.org/")
         content = content.replace("http://bitbucket.org/", "https://bitbucket.org/")
         content = content.replace(
@@ -432,12 +458,12 @@ class BbToGh(object):
         after: gh_url + '/blob/6336eab7c825852a058ed8a744be905c003ccbb8/path/to/file.py#L321'
         """
         base_url = self.bb_url + "/src/"
-        url_pairs = re.findall(base_url + r"([^/]+)(/[\w\d/?=#.,_-]*)?", content)
+        url_pairs = re.findall(base_url + r"([^/]+)(/[\w\d/?&=#.,_-]*)?", content)
         for hg_node, rest_of_url in url_pairs:
             parsed_url = urlparse.urlparse(rest_of_url)
             line = ""
-            if re.match("-\d+", parsed_url.fragment):
-                line = "#L" + re.match("-(\d+)", parsed_url.fragment).groups()[0]
+            if re.search("-\d+", parsed_url.fragment):
+                line = "#L" + re.search("-(\d+)", parsed_url.fragment).groups()[0]
             git_hash = self.hgnode_to_githash(hg_node)
             if git_hash is None:
                 git_hash = "master"
@@ -497,8 +523,8 @@ class BbToGh(object):
 
                 repo = ""
                 if git_repo_prefix:
-                    repo = self.gh_repo + "#"
-                to_ += " ({repo}{id})".format(repo=repo, id=issue_num)
+                    repo = self.gh_repo
+                to_ += " ({repo}#{id})".format(repo=repo, id=issue_num)
 
                 # if it's not a formatted url, make sure we don't throw away the matched content that came afterwards!
                 if not formatted_url:
@@ -509,8 +535,8 @@ class BbToGh(object):
                 else:
                     repo = ""
                     if git_repo_prefix:
-                        repo = self.gh_repo + "#"
-                    to_ = first + "{repo}{id}".format(repo=repo, id=issue_num) + last
+                        repo = self.gh_repo
+                    to_ = first + "{repo}#{id}".format(repo=repo, id=issue_num) + last
 
             return to_ 
                 

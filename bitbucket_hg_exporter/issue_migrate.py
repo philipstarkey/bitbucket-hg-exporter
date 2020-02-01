@@ -290,7 +290,10 @@ def format_user(user, options):
         return "Anonymous"
     if not isinstance(user, dict):
         user = {'nickname': user, 'display_name': user}
-    bb_user = "Bitbucket: [{0}](https://bitbucket.org/{0})".format(user['nickname'])
+    profile_url = "https://bitbucket.org/{0}".format(user['nickname'])
+    if "links" in user and "html" in user['links'] and "href" in user['links']['html']:
+        profile_url = user['links']['html']['href']
+    bb_user = "Bitbucket: [{0}]({1})".format(user['nickname'], profile_url)
     if user['nickname'] in options.settings['bb_gh_user_mapping']:
         gh_username = options.settings['bb_gh_user_mapping'][user['nickname']]
         gh_user = ", GitHub: [{0}](https://github.com/{0})".format(gh_username)
