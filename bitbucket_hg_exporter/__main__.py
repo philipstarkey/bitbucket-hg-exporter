@@ -619,7 +619,7 @@ class MigrationProject(object):
                             if status != 200 or (status == 200 and response['name'] != github_slug):
                                 # find out if owner is a user or org
                                 is_org = False
-                                status, response = ghapi_json('user/{owner}'.format(owner=owner), github_auth)
+                                status, response = ghapi_json('users/{owner}'.format(owner=owner), github_auth)
                                 if status == 200:
                                     if response['type'] != "User":
                                         is_org = True
@@ -649,6 +649,7 @@ class MigrationProject(object):
                                     )
                                 if response.status_code != 201:
                                     print('Failed to create empty repository {}/{} on GitHub. Response code was: {}'.format(owner, github_slug, response.status_code))
+                                    print("Error response: ", response.text)
                                     sys.exit(0)
                                 response = response.json()
 
@@ -858,7 +859,7 @@ class MigrationProject(object):
 
             with open(os.path.join(self.__settings['project_path'], 'gh-pages', 'user_mapping.json'), 'w') as f:
                 json.dump(self.__settings['bb_gh_user_mapping'], f, indent=4)
-                
+
             # TODO: write out a site pages list for search indexing
 
             # reprocess:
