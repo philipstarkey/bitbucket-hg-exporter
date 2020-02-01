@@ -238,7 +238,7 @@ class MigrationProject(object):
             'github_import_issues': True,
             'github_publish_pages': True,
             'github_pages_repo_name': '',
-            'github_rewrite_additional_URLs': True,
+            'github_rewrite_additional_URLs': False,
             'github_URL_rewrite_file_path': '',
             'github_import_forks': True,
             'github_existing_repositories': {},
