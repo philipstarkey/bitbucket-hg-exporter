@@ -120,4 +120,4 @@ I have no idea, so make sure you don't ever do this. It might merge them. It mig
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
 
 ## A note on code quality
-The quality of this code is not great. Most of it was written during sleepless nights with a newborn baby. Since the usefulness of this tool will likely end in May 2020, I've focussed on getting something working rather than something that looks good and is maintainable. If you are a future employer reviewing this project, please don't judge my too harshly!
+The quality of this code is not great. Most of it was written during sleepless nights with a newborn baby. Since the usefulness of this tool will likely end in May 2020, I've focussed on getting something working rather than something that looks good and is maintainable. If you are a future employer reviewing this project, please don't judge me too harshly!
