@@ -116,6 +116,9 @@ Note that you can have multiple BitBucket usernames pointing to the same GitHub 
 ### What happens if I already have a repository on GitHub with a name that matches the repository I am importing from BitBucket
 I have no idea, so make sure you don't ever do this. It might merge them. It might override your existing repository. It might throw an error. It probably won't be pretty.
 
+### My git filepaths are too long when your tool clones my new git repositories. What do I do?
+Run `git config --system core.longpaths true` from an elevated command prompt. See https://stackoverflow.com/questions/22575662/filename-too-long-in-git-for-windows
+
 ## Contributing
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
 

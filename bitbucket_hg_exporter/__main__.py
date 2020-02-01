@@ -602,9 +602,9 @@ class MigrationProject(object):
                             sys.exit(0)
 
                         fork_parent = find_fork_parent(repository)
-                        github_slug = fork_parent['slug'] if fork_parent is not None else repository['slug']
+                        github_slug = "" if fork_parent is not None else repository['slug']
                         if 'is_fork' in repository and repository['is_fork']:
-                            github_slug += '-fork--'+repository['full_name'].replace('/', '-')
+                            github_slug += repository['full_name'].replace('/', '-')
                             if 'parent' in repository and 'full_name' in repository['parent']:
                                 github_slug += '--forked-from--'+repository['parent']['full_name'].replace('/', '-')
 
