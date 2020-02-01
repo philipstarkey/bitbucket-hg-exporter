@@ -119,6 +119,9 @@ I have no idea, so make sure you don't ever do this. It might merge them. It mig
 ### My git filepaths are too long when your tool clones my new git repositories. What do I do?
 Run `git config --system core.longpaths true` from an elevated command prompt. See https://stackoverflow.com/questions/22575662/filename-too-long-in-git-for-windows
 
+### I had multiple HEADS on a branch. They haven't made it to GitHub. What gives?
+Yep, seems like maybe the GitHub source importer can't handle multiple HEADS on a single branch. Some of your code will be lost unless you do something on the mercurial side to fix it. It's not something I have control over, sorry.
+
 ## Contributing
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
 
