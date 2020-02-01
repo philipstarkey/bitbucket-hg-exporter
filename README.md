@@ -66,6 +66,8 @@ However, I have devised a procedure to do this by hand, which is as follows:
 This is a bit of a hack, but allows you to merge two unrelated git repos (effectively)
 7. Push the merged repo back to the actual wiki: `git push wiki master`
 
+This tool also doesn't yet save downloads. The JSON files from the BitBucket API and the associated downloads are not going to be saved or archived. GitHub will use tags as releases though, and create new tar.gz/zip bundles for each tag and list them under releases. If you have "downloads" under BitBucket, you should check to see what is missing after import.
+
 ### Does this tool handle author attributions?
 You can specify a mapping between BitBucket and GitHub accounts. This will be used in the BitBucket archive template and also any issues imported to GitHub. 
 
@@ -110,6 +112,9 @@ It should be a JSON file of the format:
 }
 ```
 Note that you can have multiple BitBucket usernames pointing to the same GitHub username (useful if someone has multiple BitBucket accounts but only one relevant GitHub account).
+
+### What happens if I already have a repository on GitHub with a name that matches the repository I am importing from BitBucket
+I have no idea, so make sure you don't ever do this. It might merge them. It might override your existing repository. It might throw an error. It probably won't be pretty.
 
 ## Contributing
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
