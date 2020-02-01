@@ -241,6 +241,7 @@ class MigrationProject(object):
             'github_rewrite_additional_URLs': False,
             'github_URL_rewrite_file_path': '',
             'github_import_forks': True,
+            'github_import_forks_to': None,
             'github_existing_repositories': {},
 
             # 'github_import_complete': False,
@@ -387,6 +388,11 @@ class MigrationProject(object):
 
             owner = self.__settings['bitbucket_repo_owner']
             auth = (self.__settings['master_bitbucket_username'], self.__get_password('bitbucket', self.__settings['master_bitbucket_username']))
+
+            # this is a new setting, so people upgrading need to have it set to the prior behaviour
+            if self.__settings['github_import_forks_to'] is None:
+                self.__settings['github_import_forks_to'] = self.__settings['github_owner']
+            self.__save_project_settings()
 
             all_repo_names = [repository['full_name'] for repository in self.__settings['bb_repositories_to_export']]
             initial_num_repos = len(all_repo_names)
@@ -607,12 +613,13 @@ class MigrationProject(object):
 
                         # Need to create the repository first! This should allow us to make it private! Yay!
                         # check if repository already exists
+                        owner = self.__settings['github_import_forks_to'] if 'is_fork' in repository and repository['is_fork'] else self.__settings['github_owner']
                         if repository['full_name'] not in self.__settings['github_existing_repositories']:
-                            status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=github_slug), github_auth)
+                            status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=owner, repo=github_slug), github_auth)
                             if status != 200 or (status == 200 and response['name'] != github_slug):
                                 # find out if owner is a user or org
                                 is_org = False
-                                status, response = ghapi_json('user/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
+                                status, response = ghapi_json('user/{owner}'.format(owner=owner), github_auth)
                                 if status == 200:
                                     if response['type'] != "User":
                                         is_org = True
@@ -627,10 +634,10 @@ class MigrationProject(object):
                                 }
                                 if repository['website']:
                                     repo_data['homepage'] = repository['website']
-                                print('Creating repository {}/{}'.format(self.__settings['github_owner'], github_slug))
+                                print('Creating repository {}/{}'.format(owner, github_slug))
                                 if is_org:
                                     response = requests.post(
-                                        'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
+                                        'https://api.github.com/orgs/{owner}/repos'.format(owner=owner),  
                                         auth=github_auth, 
                                         json=repo_data
                                     )
@@ -641,13 +648,13 @@ class MigrationProject(object):
                                         json=repo_data
                                     )
                                 if response.status_code != 201:
-                                    print('Failed to create empty repository {}/{} on GitHub. Response code was: {}'.format(self.__settings['github_owner'], github_slug, response.status_code))
+                                    print('Failed to create empty repository {}/{} on GitHub. Response code was: {}'.format(owner, github_slug, response.status_code))
                                     sys.exit(0)
                                 response = response.json()
 
                             # This either uses the initial query of the repository before the if statement, or the response from the creation of the repository
                             self.__settings['github_existing_repositories'][repository['full_name']] = {
-                                'name': '{owner}/{repo_name}'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
+                                'name': '{owner}/{repo_name}'.format(owner=owner, repo_name=github_slug),
                                 'repository': response,
                                 'import_started': False,
                                 'import_completed': False
@@ -656,10 +663,10 @@ class MigrationProject(object):
 
                         # cancel any error requests
                         if error_condition:
-                            print('Cancelling import for repository {owner}/{repo_name}) as it was in an error state. We will re-request the import shortly.'.format(owner=self.__settings['github_owner'], repo_name=github_slug))
-                            response = requests.delete('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers)
+                            print('Cancelling import for repository {owner}/{repo_name}) as it was in an error state. We will re-request the import shortly.'.format(owner=owner, repo_name=github_slug))
+                            response = requests.delete('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=owner, repo_name=github_slug), auth=github_auth, headers=github_headers)
                             if response.status_code != 204:
-                                print('WARNING: Failed to cancel import with error state (repository: {owner}/{repo_name}). We suggest visiting github.com/{owner}/{repo_name} and attempting to restart the import from there.'.format(owner=self.__settings['github_owner'], repo_name=github_slug))
+                                print('WARNING: Failed to cancel import with error state (repository: {owner}/{repo_name}). We suggest visiting github.com/{owner}/{repo_name} and attempting to restart the import from there.'.format(owner=owner, repo_name=github_slug))
                                 continue
                         
                         # generate import request to GitHub
@@ -671,19 +678,19 @@ class MigrationProject(object):
                             # "vcs_username": auth[0],
                             # "vcs_password": auth[1]
                         }
-                        print('Requesting source import for repository {}/{}'.format(self.__settings['github_owner'], github_slug))
-                        response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
+                        print('Requesting source import for repository {}/{}'.format(owner, github_slug))
+                        response = requests.put('https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=owner, repo_name=github_slug), auth=github_auth, headers=github_headers, json=params)
                         if response.status_code != 201:
                             print('Failed to import BitBucket repository {} to GitHub. Response code was: {}'.format(repository['full_name'], response.status_code))
                             sys.exit(0)
                         self.__settings['github_existing_repositories'][repository['full_name']].update({
                             'initial_import_response': response.json(),
-                            'import_url': 'https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=self.__settings['github_owner'], repo_name=github_slug),
+                            'import_url': 'https://api.github.com/repos/{owner}/{repo_name}/import'.format(owner=owner, repo_name=github_slug),
                             'import_started': True,
                         })
                         self.__save_project_settings()
                         # enable LFS
-                        response = requests.patch('https://api.github.com/repos/{owner}/{repo_name}/import/lfs'.format(owner=self.__settings['github_owner'], repo_name=github_slug), auth=github_auth, headers=github_headers, json={"use_lfs": "opt_in"})
+                        response = requests.patch('https://api.github.com/repos/{owner}/{repo_name}/import/lfs'.format(owner=owner, repo_name=github_slug), auth=github_auth, headers=github_headers, json={"use_lfs": "opt_in"})
 
                 # wait for all imports to complete
                 all_finished = False
@@ -774,7 +781,8 @@ class MigrationProject(object):
                             continue
 
                     # create the mapping
-                    archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name'])
+                    owner = self.__settings['github_import_forks_to'] if 'is_fork' in repository and repository['is_fork'] else self.__settings['github_owner']
+                    archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=owner, repo=self.__settings['github_pages_repo_name'])
                     archive_url += '#!/'+repository['full_name']
                     mapping[repository['full_name']] = hg2git.BbToGh(logs[repository['full_name']]['hg'], logs[repository['full_name']]['git'], repository['links']['html']['href'], self.__settings['github_existing_repositories'][repository['full_name']]['repository']['html_url'], self.__settings['bb_gh_user_mapping'], archive_url=archive_url)
 
@@ -1002,30 +1010,6 @@ class MigrationProject(object):
                 self.__save_project_settings()
                 print('done!')
 
-            # Upload issues to GitHub if requested (using rewritten URLs/changesets)
-            # URL to get last existing issue number: https://api.github.com/search/issues?q=repo:philipstarkey/qtutils+sort:author-date-desc&sort=created&order=desc
-            if self.__settings['import_to_github'] and self.__settings['github_import_issues'] and not self.__settings['github_issue_import_complete']:
-                print('Performing dry run of GitHub issue import')
-                for repository in self.__settings['bb_repositories_to_export']: 
-                    bb_repo = repository['full_name']
-                    gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
-                    import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=True)
-                print('done! (you can see the results in the "temp/<owner>/<repo>" folder in the project directory)')
-
-                do_import = q.confirm('Do you want to proceed with the import of issues to GitHub (this can only be attempted once)?', default=False).ask()
-
-                if do_import:
-                    for repository in self.__settings['bb_repositories_to_export']: 
-                        bb_repo = repository['full_name']
-                        gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
-                        print('Importing issues from BitBucket/{} to GitHub/{}'.format(bb_repo, gh_repo))
-                        import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=False)
-                    print('done!')
-
-                    self.__settings['github_issue_import_complete'] = True
-                    self.__save_project_settings()
-
-
             # Upload the pages to GitHub
             if self.__settings['import_to_github'] and self.__settings['github_publish_pages']:
                 print('Uploading the archive of BitBucket data to GitHub and activating GitHub pages')
@@ -1132,6 +1116,32 @@ class MigrationProject(object):
                     print(response.json())
                     sys.exit(0)
                 print('done!')
+            
+            # Upload issues to GitHub if requested (using rewritten URLs/changesets)
+            # URL to get last existing issue number: https://api.github.com/search/issues?q=repo:philipstarkey/qtutils+sort:author-date-desc&sort=created&order=desc
+            if self.__settings['import_to_github'] and self.__settings['github_import_issues'] and not self.__settings['github_issue_import_complete']:
+                print('Performing dry run of GitHub issue import')
+                for repository in self.__settings['bb_repositories_to_export']: 
+                    bb_repo = repository['full_name']
+                    gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
+                    import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=True)
+                print('done! (you can see the results in the "temp/<owner>/<repo>" folder in the project directory)')
+
+                do_import = q.confirm('Do you want to proceed with the import of issues to GitHub (this can only be attempted once)?', default=False).ask()
+
+                if do_import:
+                    for repository in self.__settings['bb_repositories_to_export']: 
+                        bb_repo = repository['full_name']
+                        gh_repo = self.__settings['github_existing_repositories'][bb_repo]['repository']['full_name']
+                        print('Importing issues from BitBucket/{} to GitHub/{}'.format(bb_repo, gh_repo))
+                        import_issues_to_github(bb_repo, gh_repo, github_auth, copy.deepcopy(self.__settings), mapping, dry_run=False)
+                    print('done!')
+
+                    self.__settings['github_issue_import_complete'] = True
+                    self.__save_project_settings()
+
+
+            
 
             # Import wikis
 
@@ -1334,6 +1344,11 @@ class MigrationProject(object):
             if self.__settings['backup_forks']:
                 self.__settings['github_import_forks'] = q.confirm('Import BitBucket repository forks to Github (this is purely for preservation and will not be listed as forks on GitHub nor will git identify the forks as related in anyway to your new master repository)?', default=self.__settings['github_import_forks']).ask()
                 if self.__settings['github_import_forks']:
+                    if self.__settings['github_import_forks_to'] is None:
+                        default_fork_destination = self.__settings['github_owner']
+                    else:
+                        default_fork_destination = self.__settings['github_import_forks_to']
+                    self.__settings['github_import_forks_to'] = q.text('Which github organisation/user would you like the forks to be imported into?', default=default_fork_destination).ask()
                     # TODO: write this
                     # while not self.__get_github_repositories(forks=True):
                     #     pass
@@ -1353,6 +1368,7 @@ class MigrationProject(object):
                 'github_rewrite_additional_URLs': False,
                 'github_URL_rewrite_file_path': '',
                 'github_import_forks': False,
+                'github_import_forks_to': None,
                 'github_existing_repositories': {},
             })
         else:
@@ -1441,9 +1457,12 @@ class MigrationProject(object):
             if self.__settings['github_rewrite_additional_URLs']:
                 print('            Path containing URL rewrites: {}'.format(str(self.__settings['github_URL_rewrite_file_path'])))
             print('        Import BitBucket forks to GitHub: {}'.format(str(self.__settings['github_import_forks'])))
+            print('            Forks will be imported to GitHub user/organisation: {}'.format(str(self.__settings['github_import_forks_to'])))
             print('        These repositories are already on GitHub (including imports initiated by this script in previous runs:)')
             for bitbucket_name, repo in self.__settings['github_existing_repositories'].items(): 
                 print('            BitBucket/{} -> GitHub/{}'.format(bitbucket_name, repo['name']))
+            if not self.__settings['github_existing_repositories']:
+                print('            None')
 
         response = q.confirm('Is this correct?').ask()
         return response
