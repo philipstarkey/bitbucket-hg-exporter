@@ -637,7 +637,7 @@ def get_hg_log(repo_path):
         message = {}
         message["revnum"], message["node"], message["date"] = d.split("|")
         message["desc"], message['email'], message['branches'] = hg_data[1][i].split(uuid_item_delim)
-        message["desc"]  = message["desc"].rstrip("\n")
+        message["desc"]  = message["desc"].rstrip("\n").encode('ascii', 'replace').decode()
         message["email"] = message["email"].replace("\r", "")
         output.append(message)
 
