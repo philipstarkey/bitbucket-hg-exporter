@@ -27,7 +27,7 @@ elif CURRENT_GIT_COMMIT_HASH:
     index = 0
     try:
         import requests
-        response = requests.get('https://test.pypi.org/pypi/monashspa/json', timeout=2)
+        response = requests.get('https://test.pypi.org/pypi/bitbucket_hg_exporter/json', timeout=2)
         data = response.json()
         if response.status_code == 200:
             found = True
