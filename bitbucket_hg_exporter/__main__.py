@@ -1334,12 +1334,11 @@ class MigrationProject(object):
                     else:
                         break
             
-            if self.__settings['github_import_issues'] or self.__settings['github_publish_pages']:
-                # rewrite other repository URLS
-                self.__settings['github_rewrite_additional_URLs'] = q.confirm('We will automatically rewrite any URLS in issues, pull-requests, etc that match any of the repositories you are migrating. Do you want to specify an additional list of URLs to rewrite?', default=self.__settings['github_rewrite_additional_URLs']).ask()
-                if self.__settings['github_rewrite_additional_URLs']:
-                    # TODO: don't use getcwd if setting is already set
-                    self.__settings['github_URL_rewrite_file_path'] = q.text('Enter the path to a JSON file of the format {"<old BitBucket repo base URL>": ["<new BitBucket archive base URL>", "<new GitHub repo base URL>"], ...}:', default=os.getcwd()).ask()
+            # rewrite other repository URLS
+            self.__settings['github_rewrite_additional_URLs'] = q.confirm('We will automatically rewrite any URLS in issues, pull-requests, etc that match any of the repositories you are migrating. Do you want to specify an additional list of URLs to rewrite?', default=self.__settings['github_rewrite_additional_URLs']).ask()
+            if self.__settings['github_rewrite_additional_URLs']:
+                # TODO: don't use getcwd if setting is already set
+                self.__settings['github_URL_rewrite_file_path'] = q.text('Enter the path to a JSON file of the format {"<old BitBucket repo base URL>": ["<new BitBucket archive base URL>", "<new GitHub repo base URL>"], ...}:', default=os.getcwd()).ask()
 
             if self.__settings['backup_forks']:
                 self.__settings['github_import_forks'] = q.confirm('Import BitBucket repository forks to Github (this is purely for preservation and will not be listed as forks on GitHub nor will git identify the forks as related in anyway to your new master repository)?', default=self.__settings['github_import_forks']).ask()
