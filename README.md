@@ -99,6 +99,17 @@ This tool also does issue import better than other existing tools, as we are map
 ### Will access permissions be copied across for our users?
 No. You should always review access permissions when migrating between services. Don't ever rely to a 3rd party tool to get this right.
 
+### What is the format for the BitBucket/GitHub username mapping?
+It should be a JSON file of the format:
+
+```
+{
+    "bitbucket_username1a": "associated GitHub username 1",
+    "bitbucket_username1b": "associated GitHub username 1",
+    "bitbucket_username2": "associated GitHub username 2"
+}
+```
+Note that you can have multiple BitBucket usernames pointing to the same GitHub username (useful if someone has multiple BitBucket accounts but only one relevant GitHub account).
 
 ## Contributing
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
