@@ -855,6 +855,10 @@ class MigrationProject(object):
                     #         )
                     #         data[repository['full_name']]['{}_files'.format(link_type)] = dict(enumerate(link_filepaths, 1))
                 json.dump(data, f, indent=4)
+
+            with open(os.path.join(self.__settings['project_path'], 'gh-pages', 'user_mapping.json'), 'w') as f:
+                json.dump(self.__settings['bb_gh_user_mapping'], f, indent=4)
+                
             # TODO: write out a site pages list for search indexing
 
             # reprocess:
