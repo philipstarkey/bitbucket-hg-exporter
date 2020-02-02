@@ -895,7 +895,6 @@ class MigrationProject(object):
 
                     # open that file, iterate over each commit, and find links to comments
                     # TODO: rename variables
-                    comment_paths = []
                     while pull_request_path is not None:
                         with open(pull_request_path, 'r') as f:
                             pull_requests_data = json.load(f)
