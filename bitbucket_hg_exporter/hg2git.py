@@ -298,7 +298,7 @@ class BbToGh(object):
     def normalize_bb_url(self, content):
         # convert back the relative links to archive template
         # (this will be returned to the non-relative archive link in replace_bb_url_with_archive())
-        content = content.replace("#!/{}".format(self.bb_repo), 'https://bitbucket.org/{}'.format(self.bb_repo))
+        content = content.replace("#!/{}/".format(self.bb_repo), 'https://bitbucket.org/{}/'.format(self.bb_repo))
         if self.archive_url is not None:
             # convert relative data links to the archive URL
             content = content.replace("data/repositories/{}/".format(self.bb_repo), '{}/data/repositories/{}/'.format(self.base_archive_url, self.bb_repo))
@@ -337,13 +337,15 @@ class BbToGh(object):
         def repl(matchobj):
             first = matchobj.group(1)
             url = matchobj.group(2)
-            hg_node = matchobj.group(3)
-            rest_of_url = matchobj.group(4)
-            last = matchobj.group(5)
+            branch = matchobj.group(3)
+            hg_node = matchobj.group(4)
+            rest_of_url = matchobj.group(5)
+            last = matchobj.group(6)
 
             # make sure none of them are None
             first = '' if first is None else first
             url = '' if url is None else url
+            branch = '' if branch is None else branch
             hg_node = '' if hg_node is None else hg_node
             rest_of_url = '' if rest_of_url is None else rest_of_url
             last = '' if last is None else last
@@ -356,6 +358,10 @@ class BbToGh(object):
                     # we've found a URL in the () portion of a []() markdown formatted URL, but it doesn't conform
                     # to the expected format, so we will skip it
                     return  matchobj.group(0)
+
+            # TODO: write this to handle rewriting branch URLs
+            if branch == 'branch/':
+                return matchobj.group(0)
 
             git_hash = self.hgnode_to_githash(hg_node)
             # only replace the URL if the hash was found in this repo
@@ -389,7 +395,7 @@ class BbToGh(object):
             return to_
                 
         base_url = self.bb_url + "/commits/"
-        content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")([0-9a-f]+)(/?)(.{1})?", repl, content, flags=re.MULTILINE)
+        content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")(?:(branch/)?)([0-9a-f]+)?(/?)(.{1})?", repl, content, flags=re.MULTILINE)
         # content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)([^\(]*?[\)])?", repl, content, flags=re.MULTILINE)
         return content
 

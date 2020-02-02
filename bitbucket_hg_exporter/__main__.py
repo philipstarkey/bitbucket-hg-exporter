@@ -967,6 +967,7 @@ class MigrationProject(object):
 
             if self.__settings['import_to_github'] and link_hashes:
                 print('Linking git and mercurial hashes...')
+                missing_git_commits = {}
                 for repository in self.__settings['bb_repositories_to_export']:
                     # skip forks if we are not importing them to github
                     if not self.__settings['github_import_forks']:
@@ -1006,11 +1007,19 @@ class MigrationProject(object):
                             if data['hash'] in mapping[repository['full_name']].hg_branches and mapping[repository['full_name']].hg_branches[data['hash']]:
                                 data['branches'] = mapping[repository['full_name']].hg_branches[data['hash']]
                             if data['git_hash'] is None:
-                                print('Warning: hg_hash ({hg_hash}) not found in the hg repository but the BitBucket API for {repo} said that it exists. This will not be mapped to a git hash.'.format(hg_hash=data['hash'], repo=repository['full_name']))
+                                if repository['full_name'] not in missing_git_commits:
+                                    missing_git_commits[repository['full_name']] = []
+                                missing_git_commits[repository['full_name']].append(data['hash'])
+                                print('Warning: a matching commit for hg_hash:{hg_hash} was not found in the git repository but the BitBucket API for {repo} said that it exists.'.format(hg_hash=data['hash'], repo=repository['full_name']))
                             
                             with open(os.path.join(repo_api_path, 'commit', filename), 'w') as f:
                                 # write out the data
                                 json.dump(data, f)
+                if missing_git_commits:
+                    filepath = os.path.join(self.__settings['project_path'], 'missing_commits.json')
+                    with open(filepath, 'w') as f:
+                        json.dump(missing_git_commits, f)
+                    print("WARNING: Some commits could not be matched between hg and git and may indicate some commits were not imported to GitHub correctly (for example, branches with multiple heads). Check carefully that you have not lost commit data in the migration to GitHub. A list of missing commits has been saved to {}.".format(filepath))
                 self.__settings['hash_link_complete'] = True
                 self.__save_project_settings()
                 print('done!')
