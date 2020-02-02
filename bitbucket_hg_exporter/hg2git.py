@@ -395,7 +395,7 @@ class BbToGh(object):
             return to_
                 
         base_url = self.bb_url + "/commits/"
-        content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")(?:(branch/)?)([0-9a-f]+)?(/?)(.{1})?", repl, content, flags=re.MULTILINE)
+        content = re.sub(r"(.{3})?(" + re.escape(base_url) + r")(?:(branch/)?)([0-9a-f]+)?((?:\?(?:[^\)])*)|(?:/)?)(.{1})?", repl, content, flags=re.MULTILINE)
         # content = re.sub(r"(.{3})?(" + re.escape(base_url) + ")([0-9a-f]+)(/?)([^\(]*?[\)])?", repl, content, flags=re.MULTILINE)
         return content
 
@@ -565,6 +565,8 @@ class BbToGh(object):
         base_url = "https://bitbucket.org/"
         #(^|[\n ^a-zA-Z0-9])@([\{a-zA-Z])([a-zA-Z0-9\:\}_\-\}]+)
         # pattern = r"(^|[^a-zA-Z0-9])@([a-zA-Z][a-zA-Z0-9_-]+)\b"
+        for bbname, ghname in self.user_mapping.items():
+            content = content.replace("@{} ".format(bbname), "@{} ".format(ghname))
         pattern = r"\@\{(.*?)\}"
         for user_id in re.findall(pattern, content):
             user = get_bb_username(user_id)

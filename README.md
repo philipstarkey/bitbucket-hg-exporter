@@ -2,6 +2,10 @@
 
 This tool provides a command line interface for exporting all project data from a BitBucket mercurial repository. This includes pull request history, issue trackers, wikis, forks, attachments and commit comments. This data (where possible) can optionally be migrated to GitHub. An archive of all BitBucket data can be optionally published in a GitHub pages repository so that a HTML record of your BitBucket repositories (and associated pull-requests, issues and comments) can be preserved.
 
+Issues can also be imported to GitHub, and commit hashes, issues links, pull-request links, URLs (including to source code), usernames, etc. will be rewritten to point to GitHub and/or the generated BitBucket archive depending on the availability of the content (for example, pull-requests are only in the BitBucket archive). This process can also handle inter-repository links, converting them to the appropriate GitHub style (which is very nice since BitBucket never supported this properly!). 
+
+You can see a complex example of such a migration [here](https://github.com/labscript-suite) (with forks archived [here](https://github.com/labscript-suite-archive)).
+
 ## How does it work?
 We recursively download all JSON files (and binary attachments) from the BitBucket API for each repository to be backed up. URLs within these JSON files are rewritten to be relative to other downloaded JSON files. We have a single-page application (written in AngularJS) that reads these JSON files and recreates a (currently very poor) approximation of the BitBucket repository. In order to save space, we do not download diffs or source files from the BitBucket API (although we do locally clone the hg repo which contains the equivalent information). Instead, diffs and source files are linked to the migrated repository hosted on GitHub (should you choose to migrate to GitHub).
 
