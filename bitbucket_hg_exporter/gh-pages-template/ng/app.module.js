@@ -40,7 +40,12 @@ function($rootScope, $location, $anchorScroll, $routeParams, $http, $timeout, In
     });
     Promise.all(promises).then(function(){Init.defer.resolve();});
   });
-
+  
+  $rootScope.$on("$routeChangeStart", function (event, next, current) {
+    if (next.params.hasOwnProperty('pageId')) {
+      next.params.pageId = Number(next.params.pageId);
+    }
+  });
   $rootScope.$on('$routeChangeSuccess', function(newRoute, oldRoute) {
     $timeout(function(){$anchorScroll($location.hash());}, 200);  
   });
