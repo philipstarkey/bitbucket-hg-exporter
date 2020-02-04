@@ -25,7 +25,7 @@ import subprocess
 import sys
 from urllib import parse
 
-from OpenSSL.SSL import SysCallError
+#from OpenSSL.SSL import SysCallError
 from distutils.dir_util import copy_tree
 
 from . import hg2git
