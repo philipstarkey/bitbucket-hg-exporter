@@ -85,7 +85,7 @@ class BbToGh(object):
     * add a shorter version of convert_all which rewrites relevant repo data in content from *other* repos
     """
 
-    def __init__(self, hg_logs, git_logs, bb_url, gh_url, user_mapping, archive_url=None):
+    def __init__(self, hg_logs, git_logs, bb_url, gh_url, user_mapping, archive_url=None, known_hg_git_mapping=None):
         self.bb_url = bb_url.rstrip("/")
         self.gh_url = gh_url.rstrip("/")
         self.gh_repo = self.gh_url.replace('https://github.com/', '')
@@ -101,6 +101,8 @@ class BbToGh(object):
             self.archive_url = archive_url.rstrip("/")
             self.base_archive_url = archive_url.split('#')[0].rstrip("/")
         key_to_hg = {}
+        if known_hg_git_mapping is None:
+            known_hg_git_mapping = {}
 
         for hg_log in hg_logs:
             node = hg_log["node"].strip()
@@ -113,6 +115,8 @@ class BbToGh(object):
                 #logger.warning('duplicates "%s"\n %r', date, key_to_hg[key])
                 pass
             self.hg_to_git[node] = None
+            if node in known_hg_git_mapping:
+                self.hg_to_git[node] = known_hg_git_mapping[node]
             self.hg_revnum_to_hg_node[int(hg_log["revnum"])] = node
 
         for git_log in git_logs:
@@ -124,6 +128,10 @@ class BbToGh(object):
             for node in key_to_hg[key]:
                 # override duplicates by newest git hash
                 self.hg_to_git[node] = git_log["node"].strip()
+
+        for hg_node, git_node in self.hg_to_git.items():
+            if git_node is None:
+                print('BitBucket repo {}:Failed to find git hash for hg hash {}'.format(self.bb_repo, hg_node))
 
         self.sorted_nodes = sorted(self.hg_to_git)
 
@@ -616,6 +624,41 @@ def get_git_log(repo_path):
 
     return output
 
+def get_hg_hashes_from_git(repo_path):
+    uuid_item_delim = "|{}|".format(str(uuid.uuid4()))
+    uuid_node_delim = "|{}|".format(str(uuid.uuid4()))
+
+    cmd = [
+        'git', 
+        'log', 
+        '--branches', 
+        '--show-notes=hg',
+        "--date-order",
+        "--reverse",
+        "--pretty=format:{node}%H{item}%N".format(
+            node=uuid_node_delim, item=uuid_item_delim
+        ),
+    ]
+    p = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        cwd=repo_path,
+        universal_newlines=True,
+        errors="replace",
+    )
+    data, _ = p.communicate()
+
+    output = {}
+    for i, d in enumerate(data.split("\n" + uuid_node_delim)):
+        if not d:
+            continue
+        message = {}
+        message["git_node"], message["hg_node"] = d.split(
+            uuid_item_delim
+        )
+        output[message["hg_node"]] = message["git_node"]
+
+    return output
 
 def get_hg_log(repo_path):
     uuid_node_delim = "|{}|".format(str(uuid.uuid4()))
