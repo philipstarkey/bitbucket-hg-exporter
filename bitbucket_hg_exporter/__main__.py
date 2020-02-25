@@ -238,6 +238,8 @@ class MigrationProject(object):
             'github_import_issues': True,
             'github_publish_pages': True,
             'github_pages_repo_name': '',
+            'github_pages_url_type': 0,
+            'github_pages_custom_url': '',
             'github_rewrite_additional_URLs': False,
             'github_URL_rewrite_file_path': '',
             'github_import_forks': True,
@@ -800,8 +802,9 @@ class MigrationProject(object):
 
                     # create the mapping
                     owner = self.__settings['github_import_forks_to'] if 'is_fork' in repository and repository['is_fork'] else self.__settings['github_owner']
-                    archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=owner, repo=self.__settings['github_pages_repo_name'])
-                    archive_url += '#!/'+repository['full_name']
+                    # archive_url = 'https://{owner}.github.io/{repo}/'.format(owner=owner, repo=self.__settings['github_pages_repo_name'])
+                    archive_url = self.get_github_pages_url()
+                    archive_url += '/#!/'+repository['full_name']
                     known_hg_git_mapping = {}
                     if 'git_hg_hashes' in logs[repository['full_name']]:
                         known_hg_git_mapping = logs[repository['full_name']]['git_hg_hashes']
@@ -1100,7 +1103,8 @@ class MigrationProject(object):
                         "has_wiki": False,
                         "has_issues": False,
                         "has_projects": False,
-                        'homepage': 'https://{owner}.github.io/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),
+                        # 'homepage': 'https://{owner}.github.io/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),
+                        'homepage': self.get_github_pages_url(),
                     }
 
                     if is_org:
@@ -1146,6 +1150,27 @@ class MigrationProject(object):
                 # Only error on response codes that are not success or "already enabled"
                 if response.status_code != 201 and response.status_code != 409:
                     print('Failed to enable GitHub pages on {}/{} (for the BitBucket archive). Response code was: {}'.format(self.__settings['github_owner'], self.__settings['github_pages_repo_name'], response.status_code))
+                    print(response.json())
+                    sys.exit(1)
+
+                # Update teh custom domain
+                if self.__settings['github_pages_url_type'] == 1:
+                    pages_data = {
+                        "cname": self.__settings['github_pages_custom_url']
+                        "source": "master"
+                    }
+                else:
+                    pages_data = {
+                        "cname": None
+                        "source": "master"
+                    }
+                response = requests.put(
+                    'https://api.github.com/repos/{owner}/{repo}/pages'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),  
+                    auth=github_auth, 
+                    json=pages_data
+                )
+                if response.status_code != 204:
+                    print('Failed to update custom domain to "{}" on {}/{} (for the BitBucket archive). Response code was: {}'.format(self.__settings['github_pages_custom_url'], self.__settings['github_owner'], self.__settings['github_pages_repo_name'], response.status_code))
                     print(response.json())
                     sys.exit(1)
                 print('done!')
@@ -1251,6 +1276,18 @@ class MigrationProject(object):
                 sys.exit(1)
             return False
         return True
+
+    def get_github_pages_url(self, prefix=True, https=True):
+        url = 'https://' if prefix and https else ('http://' if prefix else '')
+        if self.__settings['github_pages_url_type'] == 0:
+            url += '{}.github.io/{}'.format(str(self.__settings['github_owner']), str(self.__settings['github_pages_repo_name']))
+        elif self.__settings['github_pages_url_type'] == 1:
+            url += '{}'.format(str(self.__settings['github_pages_custom_url']))
+        elif self.__settings['github_pages_url_type'] == 2:
+            url += '{}/{}'.format(str(self.__settings['github_pages_custom_url']), str(self.__settings['github_pages_repo_name']))
+        else:
+            raise RuntimeError('Unknown option for self.__settings[\'github_pages_url_type\']')
+        return url
 
     def __save_project_settings(self):
         self.__settings['__version__'] = software_version
@@ -1442,7 +1479,27 @@ class MigrationProject(object):
                         print('ERROR: You cannot specify an empty repository name')
                     else:
                         break
-            
+                choices = {
+                    "No custom URL":0, 
+                    "I have a custom domain for the specific repository":1,
+                    "My user/organistion has a custom domain for all repositories":2,
+                }
+                response = q.select("Dow you wish to use a custom domain name for the BitBucket backup published to GitHub pages?", choices=choices.keys()).ask()
+                self.__settings['github_pages_url_type'] = choices[response]
+                if choices[response] == 1 or choices[response] == 2:
+                    while True:
+                        self.__settings['github_pages_custom_url'] = q.text('Enter the custom domain (without http(s):// prefix)', default=self.__settings['github_pages_custom_url']).ask()
+                        if 'http://' in self.__settings['github_pages_custom_url'] or 'https://' in self.__settings['github_pages_custom_url']:
+                            print('ERROR: Do not include the http(s):// prefix in the domain')
+                        elif '/' in self.__settings['github_pages_custom_url']:
+                            print('ERROR: Domains cannot have "/" characters in them')
+                        elif self.__settings['github_pages_custom_url'] is None:
+                            print('Somehow you have specified type "None" for the custom URL which is not allowed')
+                        else:
+                            break
+                else:
+                    self.__settings['github_pages_custom_url'] = ''
+
             # rewrite other repository URLS
             self.__settings['github_rewrite_additional_URLs'] = q.confirm('We will automatically rewrite any URLS in issues, pull-requests, etc that match any of the repositories you are migrating. Do you want to specify an additional list of URLs to rewrite?', default=self.__settings['github_rewrite_additional_URLs']).ask()
             if self.__settings['github_rewrite_additional_URLs']:
@@ -1473,6 +1530,8 @@ class MigrationProject(object):
                 'github_import_issues': False,
                 'github_publish_pages': False,
                 'github_pages_repo_name': '',
+                'github_pages_url_type': 0,
+                'github_pages_custom_url': '',
                 'github_rewrite_additional_URLs': False,
                 'github_URL_rewrite_file_path': '',
                 'github_import_forks': False,
@@ -1563,6 +1622,7 @@ class MigrationProject(object):
             print('        Publish BitBucket backup on GitHub pages: {}'.format(str(self.__settings['github_publish_pages'])))
             if self.__settings['github_publish_pages']:
                 print('            Repository name for backup: {}'.format(str(self.__settings['github_pages_repo_name'])))
+                print('            URL for backup: {}'.format(self.get_github_pages_url()))
             print('        Rewrite custom set of URLs in issues/comments/etc: {}'.format(str(self.__settings['github_rewrite_additional_URLs'])))
             if self.__settings['github_rewrite_additional_URLs']:
                 print('            Path containing URL rewrites: {}'.format(str(self.__settings['github_URL_rewrite_file_path'])))
