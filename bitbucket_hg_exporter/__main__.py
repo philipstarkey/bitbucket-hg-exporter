@@ -688,7 +688,7 @@ class MigrationProject(object):
                             'name': github_repo_name,
                             'repository': response,
                             'import_started': False,
-                            'import_completed': False
+                            'import_completed': False,
                             'import_status': {
                                 'repository_url': 'https://api.github.com/repos/'+github_repo_name
                             }
@@ -696,7 +696,7 @@ class MigrationProject(object):
                         self.__save_project_settings()
 
                         hg_clone_dest = os.path.join(self.__settings['project_path'], 'hg-repos', *repository['full_name'].split('/'))
-                        clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
+                        git_clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
                         repo_mapping[hg_clone_dest] = git_clone_dest
 
                     # TODO: provide option to skip the mapping file write and user choice if it has been done before
@@ -1156,12 +1156,12 @@ class MigrationProject(object):
                 # Update teh custom domain
                 if self.__settings['github_pages_url_type'] == 1:
                     pages_data = {
-                        "cname": self.__settings['github_pages_custom_url']
+                        "cname": self.__settings['github_pages_custom_url'],
                         "source": "master"
                     }
                 else:
                     pages_data = {
-                        "cname": None
+                        "cname": None,
                         "source": "master"
                     }
                 response = requests.put(
