@@ -764,7 +764,7 @@ class MigrationProject(object):
                     clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
                     clone_url =  github_data['repository']['clone_url']
                     if not os.path.exists(os.path.join(clone_dest, '.git', 'config')):
-                        self.call_git_subprocess('clone', clone_url, cwd=clone_dest, error_message='Failed to git clone {}'.format(clone_url))
+                        self.call_git_subprocess('clone', clone_url, clone_dest, error_message='Failed to git clone {}'.format(clone_url))
                         # p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
                         # p.communicate()
                         # if p.returncode:
