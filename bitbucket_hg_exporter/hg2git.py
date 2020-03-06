@@ -609,9 +609,10 @@ def get_git_log(repo_path):
         errors="replace",
     )
     data, _ = p.communicate()
+    splittable_data = '\n' + data
 
     output = []
-    for i, d in enumerate(data.split("\n" + uuid_node_delim)):
+    for i, d in enumerate(splittable_data.split("\n" + uuid_node_delim)):
         if not d:
             continue
         message = {}
@@ -647,9 +648,10 @@ def get_hg_hashes_from_git(repo_path):
         errors="replace",
     )
     data, _ = p.communicate()
+    splittable_data = '\n' + data
 
     output = {}
-    for i, d in enumerate(data.split("\n" + uuid_node_delim)):
+    for i, d in enumerate(splittable_data.split("\n" + uuid_node_delim)):
         if not d:
             continue
         message = {}
