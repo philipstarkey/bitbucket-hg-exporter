@@ -688,7 +688,7 @@ class MigrationProject(object):
                             'name': github_repo_name,
                             'repository': response,
                             'import_started': False,
-                            'import_completed': False
+                            'import_completed': False,
                             'import_status': {
                                 'repository_url': 'https://api.github.com/repos/'+github_repo_name
                             }
@@ -696,7 +696,7 @@ class MigrationProject(object):
                         self.__save_project_settings()
 
                         hg_clone_dest = os.path.join(self.__settings['project_path'], 'hg-repos', *repository['full_name'].split('/'))
-                        clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
+                        git_clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
                         repo_mapping[hg_clone_dest] = git_clone_dest
 
                     # TODO: provide option to skip the mapping file write and user choice if it has been done before
@@ -764,14 +764,14 @@ class MigrationProject(object):
                     clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
                     clone_url =  github_data['repository']['clone_url']
                     if not os.path.exists(os.path.join(clone_dest, '.git', 'config')):
-                        self.call_git_subprocess('git', 'clone', clone_url, clone_dest, error_message='Failed to git clone {}'.format(clone_url))
+                        self.call_git_subprocess('clone', clone_url, clone_dest, error_message='Failed to git clone {}'.format(clone_url))
                         # p=subprocess.Popen(['git', 'clone', clone_url, clone_dest])
                         # p.communicate()
                         # if p.returncode:
                         #     print('Failed to git clone {}'.format(clone_url))
                         #     sys.exit(1)
                     elif do_git_pull:
-                        if not self.call_git_subprocess('git', 'pull', clone_url, cwd=clone_dest, error_message='Failed to git update (pull) from {}'.format(clone_url), exit=False):
+                        if not self.call_git_subprocess('pull', clone_url, cwd=clone_dest, error_message='Failed to git update (pull) from {}'.format(clone_url), exit=False):
                             print('This is probably because the repository is empty? We\'ll try and continue...')
                         # p=subprocess.Popen(['git', 'pull', clone_url], cwd=clone_dest)
                         # p.communicate()
@@ -1156,12 +1156,12 @@ class MigrationProject(object):
                 # Update teh custom domain
                 if self.__settings['github_pages_url_type'] == 1:
                     pages_data = {
-                        "cname": self.__settings['github_pages_custom_url']
+                        "cname": self.__settings['github_pages_custom_url'],
                         "source": "master"
                     }
                 else:
                     pages_data = {
-                        "cname": None
+                        "cname": None,
                         "source": "master"
                     }
                 response = requests.put(
@@ -1268,7 +1268,12 @@ class MigrationProject(object):
 
     def call_git_subprocess(self, *args, cwd=None, error_message='', exit=True):
         # set remote
-        p=subprocess.Popen(['git'] + args, cwd=cwd)
+        if cwd:
+            try:
+                os.makedirs(cwd)
+            except FileExistsError:
+                pass
+        p=subprocess.Popen(['git'] + list(args), cwd=cwd)
         p.communicate()
         if p.returncode:
             print(error_message)
