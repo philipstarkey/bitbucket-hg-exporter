@@ -246,6 +246,7 @@ class MigrationProject(object):
             'github_import_forks_to': None,
             'github_existing_repositories': {},
             'hg_to_git_tool': 'github',
+            'local_git_repos_pushed': [],
 
             # 'github_import_complete': False,
             'github_git_download_complete': False,
@@ -520,6 +521,7 @@ class MigrationProject(object):
 
             logs = {}
             for repository in self.__settings['bb_repositories_to_export']:
+                print('Processing mercurial repository {}'.format(repository['full_name']))
                 # TODO: use password from mercurial_keyring (which I think means saving an additional keyring entry with
                 # name and username as <username>@@<repo_url>)
                 clone_dest = os.path.join(self.__settings['project_path'], 'hg-repos', *repository['full_name'].split('/'))
@@ -728,11 +730,14 @@ class MigrationProject(object):
                                 continue
                         github_repo_name = self.__settings['github_existing_repositories'][repository['full_name']]['name']
                         clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
-                        clone_url = 'https://github.com/{name}'.format(name=github_repo_name)
-                        self.call_git_subprocess('remote', 'add', 'origin', clone_url, cwd=clone_dest, error_message='Failed to add remote for git repository at {path}. Maybe it\'s already been added'.format(path=clone_dest), exit=False)
-                        self.call_git_subprocess('push', 'origin', '--all', cwd=clone_dest,  error_message='Failed to push {path} to remote repository'.format(path=clone_dest))
-                        self.call_git_subprocess('push', 'origin', '--tags', cwd=clone_dest,  error_message='Failed to push tags in {path} to remote repository'.format(path=clone_dest))
-                        self.call_git_subprocess('push', 'origin', 'refs/notes/*', cwd=clone_dest,  error_message='Failed to push notes in {path} to remote repository'.format(path=clone_dest))
+                        if github_repo_name not in self.__settings['local_git_repos_pushed']:
+                            clone_url = 'https://github.com/{name}'.format(name=github_repo_name)
+                            self.call_git_subprocess('remote', 'add', 'origin', clone_url, cwd=clone_dest, error_message='Failed to add remote for git repository at {path}. Maybe it\'s already been added'.format(path=clone_dest), exit=False)
+                            self.call_git_subprocess('push', 'origin', '--all', cwd=clone_dest,  error_message='Failed to push {path} to remote repository'.format(path=clone_dest), retry=True)
+                            self.call_git_subprocess('push', 'origin', '--tags', cwd=clone_dest,  error_message='Failed to push tags in {path} to remote repository'.format(path=clone_dest), retry=True)
+                            self.call_git_subprocess('push', 'origin', 'refs/notes/*', cwd=clone_dest,  error_message='Failed to push notes in {path} to remote repository'.format(path=clone_dest), retry=True)
+                            self.__settings['local_git_repos_pushed'].append(github_repo_name)
+                            self.__save_project_settings()
 
                         # Get any known hg-> git hash mapping from the git notes of the converted repository
                         logs[repository['full_name']]['git_hg_hashes'] = hg2git.get_hg_hashes_from_git(clone_dest)
@@ -761,6 +766,8 @@ class MigrationProject(object):
                     github_data['repository'] = response.json()
                     self.__save_project_settings()
 
+                    print('Processing git repository {}'.format(github_data['name']))
+
                     # TODO: use password from github keyring?
                     clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_data['name'].split('/'))
                     clone_url =  github_data['repository']['clone_url']
@@ -771,6 +778,10 @@ class MigrationProject(object):
                         # if p.returncode:
                         #     print('Failed to git clone {}'.format(clone_url))
                         #     sys.exit(1)
+                        
+                        # git fetch origin refs/notes/*:refs/notes/*
+                        self.call_git_subprocess('fetch', 'origin', 'refs/notes/*:refs/notes/*', cwd=clone_dest,  error_message='Failed to pull notes from remote repository to {path}'.format(path=clone_dest), exit=False)
+
                     elif do_git_pull:
                         if not self.call_git_subprocess('pull', clone_url, cwd=clone_dest, error_message='Failed to git update (pull) from {}'.format(clone_url), exit=False):
                             print('This is probably because the repository is empty? We\'ll try and continue...')
@@ -782,9 +793,9 @@ class MigrationProject(object):
                         #         sys.exit(1)
                         #     else:
                         #         print('This is probably because the repository is empty? We\'ll try and continue...')
-
-                    # git fetch origin refs/notes/*:refs/notes/*
-                    self.call_git_subprocess('fetch', 'origin', 'refs/notes/*:refs/notes/*', cwd=clone_dest,  error_message='Failed to pull notes from remote repository to {path}'.format(path=clone_dest), exit=False)
+                        
+                        # git fetch origin refs/notes/*:refs/notes/*
+                        self.call_git_subprocess('fetch', 'origin', 'refs/notes/*:refs/notes/*', cwd=clone_dest,  error_message='Failed to pull notes from remote repository to {path}'.format(path=clone_dest), exit=False)
 
                     # Generate mapping for rewriting changesets and other items
                     logs[repository['full_name']]['git'] = hg2git.get_git_log(clone_dest)
@@ -1267,7 +1278,7 @@ class MigrationProject(object):
 
         return github_slug
 
-    def call_git_subprocess(self, *args, cwd=None, error_message='', exit=True):
+    def call_git_subprocess(self, *args, cwd=None, error_message='', exit=True, retry=False):
         # set remote
         if cwd:
             try:
@@ -1279,6 +1290,10 @@ class MigrationProject(object):
         if p.returncode:
             print(error_message)
             if exit:
+                if retry:
+                    response = q.confirm('Would you like to retry this failed git command or exit? Y=retry, N=exit program:').ask()
+                    if response:
+                        return self.call_git_subprocess(*args, cwd=cwd, error_message=error_message, exit=exit, retry=retry)
                 sys.exit(1)
             return False
         return True
@@ -1544,6 +1559,7 @@ class MigrationProject(object):
                 'github_import_forks_to': None,
                 'github_existing_repositories': {},
                 'hg_to_git_tool': 'github',
+                'local_git_repos_pushed': [],
             })
         else:
             raise RuntimeError('Unknown option selected')
