@@ -658,6 +658,7 @@ def get_hg_hashes_from_git(repo_path):
         message["git_node"], message["hg_node"] = d.split(
             uuid_item_delim
         )
+        message["hg_node"] = message["hg_node"].rstrip("\n")
         output[message["hg_node"]] = message["git_node"]
 
     return output
