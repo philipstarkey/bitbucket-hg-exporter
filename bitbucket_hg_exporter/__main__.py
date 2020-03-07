@@ -726,8 +726,9 @@ class MigrationProject(object):
                         if not self.__settings['github_import_forks']:
                             if 'is_fork' in repository and repository['is_fork']:
                                 continue
+                        github_repo_name = self.__settings['github_existing_repositories'][repository['full_name']]['name']
                         clone_dest = os.path.join(self.__settings['project_path'], 'git-repos', *github_repo_name.split('/'))
-                        clone_url = 'https://github.com/{name}'.format(name=self.__settings['github_existing_repositories'][repository['full_name']]['name'])
+                        clone_url = 'https://github.com/{name}'.format(name=github_repo_name)
                         self.call_git_subprocess('remote', 'add', 'origin', clone_url, cwd=clone_dest, error_message='Failed to add remote for git repository at {path}. Maybe it\'s already been added'.format(path=clone_dest), exit=False)
                         self.call_git_subprocess('push', 'origin', '--all', cwd=clone_dest,  error_message='Failed to push {path} to remote repository'.format(path=clone_dest))
                         self.call_git_subprocess('push', 'origin', '--tags', cwd=clone_dest,  error_message='Failed to push tags in {path} to remote repository'.format(path=clone_dest))
