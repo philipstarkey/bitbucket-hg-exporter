@@ -425,7 +425,7 @@ class MigrationProject(object):
             
             if self.__settings['backup_forks']:
                 if self.__settings['fork_search_complete']:
-                    search = q.confirm('A previous run of this script determined the list of all repository forks. Would you like to search for any new forks since the last run?').ask()
+                    search = q.confirm('A previous run of this script determined the list of all repository forks. Would you like to search for any new forks since the last run?', default=False).ask()
                 else:
                     search = True
 
