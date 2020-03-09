@@ -1226,7 +1226,7 @@ class MigrationProject(object):
         # query if the repository already exists
         status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=owner, repo=github_slug), github_auth)
         # only create if it doesn't exist
-        if status != 200 or (status == 200 and response['name'] != github_slug):
+        if status != 200 or (status == 200 and response['full_name'] != '{owner}/{repo}'.format(owner=owner, repo=github_slug)):
             # find out if owner is a user or org
             is_org = False
             status, response = ghapi_json('users/{owner}'.format(owner=owner), github_auth)
