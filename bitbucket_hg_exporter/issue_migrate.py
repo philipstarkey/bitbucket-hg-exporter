@@ -68,7 +68,7 @@ def import_issues_to_github(bb_repo, gh_repo, gh_auth, settings, mapping, dry_ru
                 if not cont:
                     return False
                 else:
-                    offset = len(data['items'])
+                    offset = data['items'][0]['number']
         else:
             print('WARNING: Skipping import of issues to GitHub {} as we could not query the current list of issues.'.format(options.github_repo))
             return False
