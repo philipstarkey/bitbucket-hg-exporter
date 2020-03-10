@@ -360,11 +360,14 @@ def format_comment_body(comment, changes, options):
 
 image_regex = re.compile(r'\!\[\]\((.*?)\)', re.MULTILINE)
 def apply_conversion(content, options, issue_id):
-    # TODO: Replace this with the better version in hg2git.py and also run a cut down version of URL/hash replaces for other repositories that
-    # are part of this project
+    # first apply the conversion for this repository, then for all the other ones
+    if options.bitbucket_repo in options.mapping:
+        content = options.mapping[options.bitbucket_repo].convert_all(content)
+    else:
+        print('WARNING: could not find Bb2Gh object for repo {}'.format(options.bitbucket_repo))
     for repo, mapping in options.mapping.items():
         if repo == options.bitbucket_repo:
-            content = mapping.convert_all(content)
+            continue
         else:
             content = mapping.convert_other_repo_content(content)
 
