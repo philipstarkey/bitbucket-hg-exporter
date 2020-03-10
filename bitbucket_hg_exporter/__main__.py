@@ -1099,43 +1099,16 @@ class MigrationProject(object):
                     # sys.exit(1)
 
                 # Make GitHub repo if needed
-                status, response = ghapi_json('repos/{owner}/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']), github_auth)
-                if status != 200:
-                    # find out if owner is a user or org
-                    is_org = False
-                    status, response = ghapi_json('users/{owner}'.format(owner=self.__settings['github_owner']), github_auth)
-                    if status == 200:
-                        if response['type'] != "User":
-                            is_org = True
-
-                    repo_data = {
-                        "name": self.__settings['github_pages_repo_name'],
-                        "description": "Archive of repository data from BitBucket",
-                        "private": False,
-                        "has_wiki": False,
-                        "has_issues": False,
-                        "has_projects": False,
-                        # 'homepage': 'https://{owner}.github.io/{repo}'.format(owner=self.__settings['github_owner'], repo=self.__settings['github_pages_repo_name']),
-                        'homepage': self.get_github_pages_url(),
-                    }
-
-                    if is_org:
-                        response = requests.post(
-                            'https://api.github.com/orgs/{owner}/repos'.format(owner=self.__settings['github_owner']),  
-                            auth=github_auth, 
-                            json=repo_data
-                        )
-                    else:
-                        response = requests.post(
-                            'https://api.github.com/user/repos',  
-                            auth=github_auth, 
-                            json=repo_data
-                        )
-                    if response.status_code != 201:
-                        print('Failed to create empty repository {}/{} on GitHub (for the BitBucket archive). Response code was: {}'.format(self.__settings['github_owner'], self.__settings['github_pages_repo_name'], response.status_code))
-                        sys.exit(1)
-                    response = response.json()
-
+                # the details need to be formatted as a BitBucket repository as that is what the method expects.
+                gh_pages_repo_details = {
+                    "description": "Archive of repository data from BitBucket",
+                    "is_private": False,
+                    "has_wiki": False,
+                    "has_issues": False,
+                    "has_projects": False,
+                    'website': self.get_github_pages_url(),
+                }
+                response = self.create_or_get_github_repository(self.__settings['github_owner'], self.__settings['github_pages_repo_name'], gh_pages_repo_details, github_auth)
 
                 # Push to GitHub
                 p=subprocess.Popen(['git', 'push', 'origin', 'master'], cwd=clone_dest)
@@ -1240,7 +1213,7 @@ class MigrationProject(object):
                 "private": repository['is_private'],
                 "has_wiki": repository['has_wiki'],
                 "has_issues": repository['has_issues'],
-                "has_projects": True
+                "has_projects": True if "has_projects" not in repository else repository['has_projects']
             }
             if repository['website']:
                 repo_data['homepage'] = repository['website']
