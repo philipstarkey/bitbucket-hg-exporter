@@ -1425,15 +1425,18 @@ class MigrationProject(object):
             print('There were no mercurial repositories found in the specified location. Please try again.')
             return False
 
+        # sort the list of repositories
+        sorted_bb_repositories = sorted(bb_repositories, key=lambda repo: repo['name'])
+
         # list the repositories so they can be selected for migration
-        choices = [q.Choice(repo['name'], checked=True if not self.__settings['bb_repositories_to_export'] else repo in self.__settings['bb_repositories_to_export']) for repo in bb_repositories]
+        choices = [q.Choice(repo['name'], checked=True if not self.__settings['bb_repositories_to_export'] else repo in self.__settings['bb_repositories_to_export']) for repo in sorted_bb_repositories]
         response = q.checkbox('Select repositories to export', choices=choices).ask()
 
         if len(response) == 0:
             print('You did not select any repositories to export. Please try again.')
 
         # save the list of repositories we are going to export
-        self.__settings['bb_repositories_to_export'] = [repo for repo in bb_repositories if repo['name'] in response]
+        self.__settings['bb_repositories_to_export'] = [repo for repo in sorted_bb_repositories if repo['name'] in response]
 
         return True
 
