@@ -50,6 +50,9 @@ There are also a couple of command line options that can help speed things up. I
 3. `--project-name <your project name>` which skips the project selection and uses the saved project specified. This requires the use of `--load` and `--storage-dir` and the project must exist inside the specified storage directory.
 
 ## FAQ
+### How is the mercurial repository converted to git?
+This is done either by GitHub, or by a separate tool of your choice (I suggest [hg-export-tool](https://github.com/chrisjbillington/hg-export-tool) which wraps hg-fast-export but handles some corner cases it does not). Note that branches with multiple heads (and other similar corner cases) are not well handled by the GitHub source importer (in which case you should use a local conversion tool). If you are unsure, do a test run using the GitHub source importer. My tool will write out a file of missing commit hashes just before importing issues to GitHub. If missing commits are identified, use a local tool to import. Note: I can't guarantee I'll detect lost commits - always verify all your commits are there regardless of whether you use GitHub or a local tool to convert to git.
+
 ### Does this tool leak any private data?
 Because we're downloading the BitBucket API for your repository using credentials you supply, anything those credentials can see will be made public if you publish it to GitHub.
 This may include things you thought were deleted (like comments). If this concerns you, consider using the tool to just create a local backup. You can then review the content and publish it by hand (or to a private website).
@@ -75,7 +78,7 @@ This tool also doesn't yet save downloads. The JSON files from the BitBucket API
 ### Does this tool handle author attributions?
 You can specify a mapping between BitBucket and GitHub accounts. This will be used in the BitBucket archive template and also any issues imported to GitHub. 
 
-**It is not used for commit attribution in the migrated GitHub repository**. You will need to do this by hand, prior to pushing any new commits to the repository. GitHub will email you the URL you can use to specify this mapping (through the GitHub web interface) but it will be `<github repo url>/import/authors`
+**It is not used for commit attribution in the migrated GitHub repository**. You will need to do this by hand, prior to pushing any new commits to the repository. If converting using GitHub, GitHub will email you the URL you can use to specify this mapping (through the GitHub web interface) but it will be `<github repo url>/import/authors`. If you use a local tool, refer to it's documentation for how to specify author mapping.
 
 ### I have a large number of repositories to backup. How do I work around the BitBucket API rate limit?
 This tool allows you to specify multiple BitBucket accounts in order to work around the tiny API rate limit that Atlassian impose.
@@ -93,7 +96,7 @@ Links between repositories exported/imported as part of the same project (the bi
 Yes, you can still generate the BitBucket archive pages and link to your existing GitHub project provided you have not deleted the repository from BitBucket. The command line wizard will prompt you to specify the GitHub URL(s) for any repositories already migrated. You might not want to import the issues to GitHub if you've already had new issues or pull-requests made, but the old issues will still be visible in the archive if you choose to publish it to GitHub pages.
 
 ### Do you support private repositories?
-This should handle them correctly, and keep them private on GitHub. Right now the functionality is disabled, but you can find the place to enable it in the source code by searching for "vcs_username". The reason it is disabled is because it requires giving access credentials for BitBucket to GitHub (which some people may not like). Because it is disabled, the functionality hasn't been extensively tested though so you should absolutely check all permissions by hand after migration. I cannot be held responsible if use of this tool results in proprietary code leaking into the wild, and any consequences this may have to you or your employer.
+This should handle them correctly, and keep them private on GitHub. Right now the functionality is disabled if using GitHub to convert your repository (but should work if you use a local conversion tool), but you can find the place to enable it in the source code by searching for "vcs_username". The reason it is disabled is because it requires giving access credentials for BitBucket to GitHub (which some people may not like). This functionality hasn't been extensively tested though so you should absolutely check all permissions by hand after migration. I cannot be held responsible if use of this tool results in proprietary code leaking into the wild, and any consequences this may have to you or your employer.
 
 I will eventually turn on the functionality by default, but it requires working out whether a repository is private and prompting the user to confirm it's OK to submit the credentials to GitHub. I just haven't had time to implement that yet, and if you feel like doing it for me I'll happily accept a pull request for it!
 
@@ -124,7 +127,7 @@ I have no idea, so make sure you don't ever do this. It might merge them. It mig
 Run `git config --system core.longpaths true` from an elevated command prompt. See https://stackoverflow.com/questions/22575662/filename-too-long-in-git-for-windows
 
 ### I had multiple HEADS on a branch. They haven't made it to GitHub. What gives?
-Yep, seems like maybe the GitHub source importer can't handle multiple HEADS on a single branch. Some of your code will be lost unless you do something on the mercurial side to fix it. It's not something I have control over, sorry.
+Yep, seems like the GitHub source importer can't handle multiple HEADS on a single branch. Some of your code will be lost in this case. If this matters to you, you should use a local tool to convert your mercurial repository to git (see above for tool suggestions).
 
 ## Contributing
 Feel free to log issues, or make pull requests. I do not have a heap of time to spend solving issues, but I will do my best to help. **Pull requests improving the functionality (especially the quality of the archive template) are very welcome.**
