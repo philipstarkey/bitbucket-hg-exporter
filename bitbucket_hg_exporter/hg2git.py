@@ -620,7 +620,7 @@ def get_git_log(repo_path):
             uuid_item_delim
         )
         message["revnum"] = message["node"]
-        message["desc"] = message["desc"].rstrip("\n")
+        message["desc"] = message["desc"].rstrip("\n").encode('ascii', 'replace').decode()
         output.append(message)
 
     return output
