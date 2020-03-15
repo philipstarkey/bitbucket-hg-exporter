@@ -951,7 +951,7 @@ class MigrationProject(object):
                                     comments.extend(comment_data['values'])
 
                                 if 'next' in comment_data:
-                                    pull_request_file = comment_data['next']
+                                    pull_request_file = os.path.join(self.__settings['project_path'], 'gh-pages',  *comment_data['next'].split('/'))
                                     comment_files.append(pull_request_file)
                                 else:
                                     pull_request_file = None
