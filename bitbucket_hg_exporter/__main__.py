@@ -288,7 +288,7 @@ class MigrationProject(object):
             if not first_run or location == os.getcwd():
                 location = q.text("Where is the project folder located?", default=location).ask()
             if not first_run or project is None:
-                project_name = q.select("Select a project to load?", choices=os.listdir(location)).ask()
+                project_name = q.select("Select a project to load?", choices=sorted(os.listdir(location))).ask()
             elif first_run and project is not None:
                 project_name = project
 
