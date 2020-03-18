@@ -1662,7 +1662,10 @@ class MigrationProject(object):
     def __get_password(self, service, username, silent=True, force_new_password=False):
         if not force_new_password:
             # TODO: Look for saved passwords from other applications? (e.g. TortoiseHg)
-            password = self.__auth_credentials[service].get(username, None) or keyring.get_password(KEYRING_SERVICES[service], username)
+            try:
+                password = self.__auth_credentials[service].get(username, None) or keyring.get_password(KEYRING_SERVICES[service], username)
+            except keyring.errors.KeyringLocked:
+                password = None
             
             if password is not None:
                 # check the password works
