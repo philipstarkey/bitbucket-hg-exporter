@@ -957,6 +957,83 @@ class MigrationProject(object):
                                     pull_request_file = None
 
                         done_idxs = []
+                        all_idxs = [c['id'] for c in comments]
+                        all_parent_idxs = {c['parent']['id']:i for i, c in enumerate(reversed(comments)) if 'parent' in c}
+                        dummy_comments = 0
+                        for parent_idx, insert_index in all_parent_idxs.items():
+                            if parent_idx not in all_idxs:
+                                # insert dummy comment for parent before the comment if it is missing
+                                child_comment = comments[insert_index]
+                                dummy_comment = {
+                                    "links": {
+                                        "self": {
+                                            "href": child_comment['links']['self']['href'].replace(child_comment['id'], parent_idx)
+                                        },
+                                        "html": {
+                                            "href": child_comment['links']['html']['href'].replace(child_comment['id'], parent_idx)
+                                        }
+                                    },
+                                    "deleted": False,
+                                    "pullrequest": copy.deepcopy(child_comment['pullrequest']),
+                                    "content": {
+                                        "raw": "This comment could not be backed up from BitBucket, so this dummy comment was inserted in it's place.",
+                                        "markup": "markdown",
+                                        "html": "<p>This comment could not be backed up from BitBucket, so this dummy comment was inserted in it's place.</p>",
+                                        "type": "rendered"
+                                    },
+                                    "created_on": "1970-01-01T00:00:00.000000+00:00",
+                                    "user": {
+                                        "display_name": "Unknown User",
+                                        "uuid": "{00000000-0000-0000-0000-000000000000}",
+                                        "links": {
+                                            "self": {
+                                                "href": "https://api.bitbucket.org/2.0/users/%7B00000000-0000-0000-0000-000000000000%7D"
+                                            },
+                                            "html": {
+                                                "href": "https://bitbucket.org/%7B00000000-0000-0000-0000-000000000000%7D/"
+                                            },
+                                            "avatar": {
+                                                "href": "data/missing_avatar.png"
+                                            }
+                                        },
+                                        "nickname": "unknownuser",
+                                        "type": "user",
+                                        "account_id": "000000:00000000-0000-0000-0000-000000000000"
+                                    },
+                                    "updated_on": "1970-01-01T00:00:00.000000+00:00",
+                                    "type": "pullrequest_comment",
+                                    "id": parent_idx
+                                }
+                                comments.insert(insert_index, dummy_comment)
+                                print('Comment with id {} was missing (you should have seen an earlier error about this during the download stage). There is not much we can do about it if BitBucket refuses to give us the data, so we have inserted a dummy comment in place so that child comments at least show up correctly.'.format(parent_idx))
+                                dummy_comments += 1
+
+                        # create an additional file if inserting dummy comments pushed the number over the limit
+                        if (len(comments)//100+1) > len(comment_files):
+                            *new_file_path_prefixes, new_file_path_suffix = comment_files[-1].split('=')
+                            page_num, extension = new_file_path_suffix.split('.')
+                            page_num = int(page_num) + 1
+                            new_file_path = '='.join(new_file_path_prefixes+[page_num]) + '.' + extension
+                            # open old file and add "next" page
+                            with open(comment_files[-1], 'r') as f:
+                                prev_file_data = json.load(f)
+                            prev_file_data['next'] = new_file_path
+                            with open(comment_files[-1], 'w') as f:
+                                json.dump(prev_file_data, f)
+                            # open new file and write out structure
+                            with open(new_file_path, 'w') as f:
+                                new_file_data = {
+                                    "previous": comment_files[-1],
+                                    "pagelen": 100, 
+                                    "size": prev_file_data['size'], 
+                                    "page": page_num,
+                                    "values": [] # no need to actually write out unordered data. It gets written later
+                                }
+                                json.dump(new_file_data, f)
+                            # add newly created file to the list
+                            comment_files.append(new_file_path)
+                                
+
                         comment_flat = {}
                         comment_hierarchy = OrderedDict()
                         while len(done_idxs) < len(comments):
@@ -986,8 +1063,10 @@ class MigrationProject(object):
                             with open(pull_request_file, 'r') as f:
                                 comment_data = json.load(f)
                                 comment_data['values'] = reordered_comments[i*100:(i+1)*100]
-                                if len(reordered_comments) != comment_data['size']:
+                                if i==0 and len(reordered_comments) - dummy_comments != comment_data['size']:
                                     print('Warning: Something went wrong reordering the pull requests comments in file {}. The number of comments we are writing does not agree with how many there were before we reordered them. There were {} comments, now {} comments'.format(pull_request_file, comment_data['size'], len(reordered_comments)))
+                                # update this in case we had to insert a dummy comment
+                                comment_data['size'] = len(reordered_comments)
                             with open(pull_request_file, 'w') as f:
                                 json.dump(comment_data, f)
                 self.__settings['reorder_comments_complete'] = True
@@ -2229,6 +2308,15 @@ class BitBucketExport(object):
 
                     if skip:
                         break
+
+                # TODO: Work out why this is needed now and wasn't needed for other repositories I tested with
+                #       Was it because I had two repositories 'user/repo" and "user/repo-dev"?
+                #       In that case it started download repo-dev as part of repo and the ignore rules didn't
+                #       match so it started downloading source files too.
+                repo_str = 'repositories/{}/{}'.format(self.__owner, self.__repository)
+                if not skip and not result.startswith(repo_str+'/') and result != repo_str:
+                    skip=True
+                    print('Skipping file {} (found in {})'.format(result, endpoint_path))
 
                 if skip:
                     continue
