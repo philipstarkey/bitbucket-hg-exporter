@@ -967,10 +967,16 @@ class MigrationProject(object):
                                 dummy_comment = {
                                     "links": {
                                         "self": {
-                                            "href": child_comment['links']['self']['href'].replace(child_comment['id'], parent_idx)
+                                            "href": child_comment['links']['self']['href'].replace(
+                                                '/{}.json'.format(child_comment['id']), 
+                                                '/{}.json'.format(parent_idx)
+                                            )
                                         },
                                         "html": {
-                                            "href": child_comment['links']['html']['href'].replace(child_comment['id'], parent_idx)
+                                            "href": child_comment['links']['html']['href'].replace(
+                                                '#comment-{}'.format(child_comment['id']), 
+                                                '#comment-{}'.format(parent_idx)
+                                            )
                                         }
                                     },
                                     "deleted": False,
