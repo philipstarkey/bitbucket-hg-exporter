@@ -1903,6 +1903,7 @@ class BitBucketExport(object):
             {'type': 'startswith', 'not':False, 'string':'repositories/{owner}/{repo}/issues/import'.format(owner=self.__owner, repo=self.__repository)},
             {'type': 'startswith', 'not':False, 'string':'repositories/{owner}/{repo}/issues/export'.format(owner=self.__owner, repo=self.__repository)},
             {'type': 'startswith', 'not':False, 'string':'repositories/{owner}/{repo}/hooks'.format(owner=self.__owner, repo=self.__repository)},
+            {'type': 'startswith', 'not':False, 'string':'repositories/{owner}/{repo}/refs/branches'.format(owner=self.__owner, repo=self.__repository)},
             # Get the list of commits, but not individual commit JSON files
             # {'type': 'endswith', 'not':True, 'string':'repositories/{owner}/{repo}/commits/'.format(owner=self.__owner, repo=self.__repository)},
             {'type': 'endswith', 'not':False, 'string':'/approve'},
