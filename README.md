@@ -15,10 +15,11 @@ Because BitBucket have decided to just delete all mercurial repositories at the 
 Quite frankly, BitBucket shouldn't be deleting user data (especially is those users have been paying). They should be at least leaving a read only copy online. **But there is no indication they will do this**. If I was an Atlassian Git customer, I would be very, very concerned about the longevity of BitBucket cloud given this attitude.
 
 ## Current project status
-Under active development. Alpha stage, but very useable.
+Under active development. Beta stage, but very useable.
 
-The import to GitHub is probably as good as it's going to get.
-Wikis need to be migrated by hand (see below) and author attribution also needs to be done via the GitHub web interface (prior to pushing any new commits to GitHub) as the GitHub API for this doesn't seem to correctly link user/email combinations to GitHub accounts.
+The import to GitHub is probably as good as it's going to get (alternatively, you can now use a local conversion tool and then push to GitHub for a much better experience).
+Wikis need to be migrated by hand (see below).
+If using the GitHub source importer (rather than a local conversion tool), then author attribution also needs to be done via the GitHub web interface (prior to pushing any new commits to GitHub) as the GitHub API for this doesn't seem to correctly link user/email combinations to GitHub accounts.
 
 There may be subsequent improvements to the HTML archive of BitBucket content (that can be published to GitHub pages). However, because this just reads the BitBucket API JSON files which are already downloaded locally to your PC (and possibly published on GitHub pages), you can migrate to GitHub now and then apply the new template to your archive to gain the improvements once they are available.
 
