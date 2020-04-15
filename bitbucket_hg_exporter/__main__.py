@@ -1019,7 +1019,7 @@ class MigrationProject(object):
                             *new_file_path_prefixes, new_file_path_suffix = comment_files[-1].split('=')
                             page_num, extension = new_file_path_suffix.split('.')
                             page_num = int(page_num) + 1
-                            new_file_path = '='.join(new_file_path_prefixes+[page_num]) + '.' + extension
+                            new_file_path = '='.join(new_file_path_prefixes+[str(page_num)]) + '.' + extension
                             # open old file and add "next" page
                             with open(comment_files[-1], 'r') as f:
                                 prev_file_data = json.load(f)
