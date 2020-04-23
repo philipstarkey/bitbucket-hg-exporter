@@ -234,7 +234,7 @@ def convert_issue(issue, comments, changes, options, attachments, gh_milestones)
     }
 
     # Assign issue if we have a mapping between BitBucket and GitHub users for the relevant user
-    if issue['assignee'] and issue['assignee']['nickname'] in options.settings['bb_gh_user_mapping']:
+    if issue['assignee'] and 'nickname' in issue['assignee'] and issue['assignee']['nickname'] in options.settings['bb_gh_user_mapping']:
         # out['assignee'] = options.settings['bb_gh_user_mapping'][issue['assignee']['nickname']]
         pass
 
