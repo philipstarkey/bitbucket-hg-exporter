@@ -420,6 +420,12 @@ class MigrationProject(object):
                         else:
                             more = False
                     else:
+                        if status == 404:
+                            # some forks might have been deleted, but they are still reported by Bitbucket API
+                            # report the error and keep enumerating forks (of the remaining repos)
+                            print('Warning: repository {} might have been deleted (404).'.format(repository['full_name']))
+                            more = False
+                            continue
                         print('Failed to query BitBucket API when determining forks for {}.'.format(repository['full_name']))
                         sys.exit(1)
             
