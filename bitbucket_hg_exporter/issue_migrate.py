@@ -7,7 +7,7 @@
 #   as permitted under the GPLv3 license
 #
 # New functions and changes copyright Philip Starkey 2020 and licensed under the GPLv3
-
+import copy
 import json
 import os
 import re
@@ -291,7 +291,8 @@ def format_user(user, options):
         return "Anonymous"
     if not isinstance(user, dict):
         user = {'nickname': user, 'display_name': user}
-    if not 'nickname' in user and 'username' in user:
+    elif 'nickname' not in user and 'username' in user:
+        user = copy.deepcopy(user)
         user['nickname'] = user['username']
     profile_url = "https://bitbucket.org/{0}".format(user['nickname'])
     if "links" in user and "html" in user['links'] and "href" in user['links']['html']:
