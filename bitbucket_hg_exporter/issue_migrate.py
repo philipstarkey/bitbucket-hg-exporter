@@ -7,7 +7,7 @@
 #   as permitted under the GPLv3 license
 #
 # New functions and changes copyright Philip Starkey 2020 and licensed under the GPLv3
-
+import copy
 import json
 import os
 import re
@@ -234,7 +234,7 @@ def convert_issue(issue, comments, changes, options, attachments, gh_milestones)
     }
 
     # Assign issue if we have a mapping between BitBucket and GitHub users for the relevant user
-    if issue['assignee'] and issue['assignee']['nickname'] in options.settings['bb_gh_user_mapping']:
+    if issue['assignee'] and 'nickname' in issue['assignee'] and issue['assignee']['nickname'] in options.settings['bb_gh_user_mapping']:
         # out['assignee'] = options.settings['bb_gh_user_mapping'][issue['assignee']['nickname']]
         pass
 
@@ -291,6 +291,9 @@ def format_user(user, options):
         return "Anonymous"
     if not isinstance(user, dict):
         user = {'nickname': user, 'display_name': user}
+    elif 'nickname' not in user and 'username' in user:
+        user = copy.deepcopy(user)
+        user['nickname'] = user['username']
     profile_url = "https://bitbucket.org/{0}".format(user['nickname'])
     if "links" in user and "html" in user['links'] and "href" in user['links']['html']:
         profile_url = user['links']['html']['href']
